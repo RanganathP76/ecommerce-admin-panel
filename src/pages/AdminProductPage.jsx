@@ -25,6 +25,7 @@ export default function AdminProductPage() {
       title: "",
       description: "",
       price: "",
+      comparePrice: "", // NEW
       category: "",
       collection: "",
       isCustomizable: false,
@@ -190,6 +191,7 @@ export default function AdminProductPage() {
     fd.append("title", formData.title);
     fd.append("description", formData.description);
     fd.append("price", formData.price);
+    fd.append("comparePrice", formData.comparePrice); // NEW
     fd.append("category", formData.category);
     fd.append("collection", formData.collection);
     fd.append("isCustomizable", formData.isCustomizable);
@@ -198,7 +200,7 @@ export default function AdminProductPage() {
       JSON.stringify(formData.customizationFields)
     );
     fd.append("specifications", JSON.stringify(formData.specifications || []));
-    fd.append("stock", formData.stock || 0); // ✅ ensure numeric stock
+    fd.append("stock", formData.stock || 0);
     fd.append("images", JSON.stringify(formData.existingImages));
     formData.productImages.forEach((file) => fd.append("productImages", file));
 
@@ -228,6 +230,7 @@ export default function AdminProductPage() {
       title: prod.title,
       description: prod.description,
       price: prod.price,
+      comparePrice: prod.comparePrice || "", // NEW
       category: prod.category,
       collection: prod.collection || "",
       isCustomizable: prod.isCustomizable,
@@ -289,6 +292,14 @@ export default function AdminProductPage() {
           value={formData.price}
           onChange={(e) =>
             setFormData({ ...formData, price: e.target.value })
+          }
+        />
+        <input
+          type="number"
+          placeholder="Compare Price"
+          value={formData.comparePrice}
+          onChange={(e) =>
+            setFormData({ ...formData, comparePrice: e.target.value })
           }
         />
         <input
@@ -504,7 +515,15 @@ export default function AdminProductPage() {
               alt={prod.title}
             />
             <h4>{prod.title}</h4>
-            <p>₹{prod.price}</p>
+            <p>
+              {prod.comparePrice && prod.comparePrice > prod.price ? (
+                <span>
+                  <s>₹{prod.comparePrice}</s> ₹{prod.price}
+                </span>
+              ) : (
+                <>₹{prod.price}</>
+              )}
+            </p>
             <p>{prod.category}</p>
             <div className="product-actions">
               <button onClick={() => handleEdit(prod)}>Edit</button>
@@ -516,5 +535,3 @@ export default function AdminProductPage() {
     </div>
   );
 }
-
-
