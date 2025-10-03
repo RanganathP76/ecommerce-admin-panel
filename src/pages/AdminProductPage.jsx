@@ -25,15 +25,19 @@ export default function AdminProductPage() {
       title: "",
       description: "",
       price: "",
-      comparePrice: "", // NEW
+      comparePrice: "",
       category: "",
       collection: "",
       isCustomizable: false,
       customizationFields: [],
       specifications: [],
-      stock: 0, // simple stock
-      productImages: [],
-      existingImages: [],
+      stock: 0,
+      productImages: [], // File objects to upload
+      existingImages: [], // existing image URLs
+
+      // Reviews
+      reviews: [], // { _id?, tempId?, name, rating, comment, images: [url], newImages: [File] }
+      reviewsToDelete: [],
     };
   }
 
@@ -61,13 +65,10 @@ export default function AdminProductPage() {
     fetchCollections();
   }, []);
 
-  // File handlers
+  // File handlers (product images)
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
-    setFormData((prev) => ({
-      ...prev,
-      productImages: [...prev.productImages, ...files],
-    }));
+    setFormData((prev) => ({ ...prev, productImages: [...prev.productImages, ...files] }));
   };
 
   const removeNewImage = (index) => {
@@ -126,13 +127,7 @@ export default function AdminProductPage() {
 
   // Customization fields
   const addCustomizationField = () =>
-    setFormData((prev) => ({
-      ...prev,
-      customizationFields: [
-        ...prev.customizationFields,
-        { label: "", type: "text" },
-      ],
-    }));
+    setFormData((prev) => ({ ...prev, customizationFields: [...prev.customizationFields, { label: "", type: "text" }] }));
   const updateCustomizationField = (index, key, value) =>
     setFormData((prev) => {
       const updated = [...prev.customizationFields];
@@ -148,10 +143,7 @@ export default function AdminProductPage() {
 
   // Specifications
   const addSpecification = () =>
-    setFormData((prev) => ({
-      ...prev,
-      specifications: [...prev.specifications, { key: "", values: [] }],
-    }));
+    setFormData((prev) => ({ ...prev, specifications: [...prev.specifications, { key: "", values: [] }] }));
   const updateSpecificationKey = (index, value) =>
     setFormData((prev) => {
       const updated = [...prev.specifications];
@@ -167,8 +159,7 @@ export default function AdminProductPage() {
   const updateSpecValue = (specIndex, valIndex, key, value) =>
     setFormData((prev) => {
       const updated = [...prev.specifications];
-      updated[specIndex].values[valIndex][key] =
-        key === "stock" ? Number(value) : value;
+      updated[specIndex].values[valIndex][key] = key === "stock" ? Number(value) : value;
       return { ...prev, specifications: updated };
     });
   const removeSpecValue = (specIndex, valIndex) =>
@@ -184,41 +175,105 @@ export default function AdminProductPage() {
       return { ...prev, specifications: updated };
     });
 
+  // ===== Reviews handlers =====
+  const addReview = () => {
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    setFormData((prev) => ({ ...prev, reviews: [...prev.reviews, { tempId, name: "", rating: 5, comment: "", images: [], newImages: [] }] }));
+  };
+
+  const updateReview = (index, key, value) => {
+    setFormData((prev) => {
+      const updated = [...prev.reviews];
+      updated[index][key] = value;
+      return { ...prev, reviews: updated };
+    });
+  };
+
+  const handleReviewImageUpload = (index, files) => {
+    setFormData((prev) => {
+      const updated = [...prev.reviews];
+      updated[index].newImages = [...(updated[index].newImages || []), ...files];
+      return { ...prev, reviews: updated };
+    });
+  };
+
+  const removeReview = (index) => {
+    setFormData((prev) => {
+      const updated = [...prev.reviews];
+      const [removed] = updated.splice(index, 1);
+      const toDelete = [...prev.reviewsToDelete];
+      if (removed && removed._id) toDelete.push(removed._id);
+      return { ...prev, reviews: updated, reviewsToDelete: toDelete };
+    });
+  };
+
+  const removeReviewExistingImage = (reviewIndex, imgIndex) => {
+    setFormData((prev) => {
+      const updated = [...prev.reviews];
+      const review = { ...updated[reviewIndex] };
+      review.images = (review.images || []).filter((_, i) => i !== imgIndex);
+      updated[reviewIndex] = review;
+      return { ...prev, reviews: updated };
+    });
+  };
+
+  const removeReviewNewImage = (reviewIndex, fileIndex) => {
+    setFormData((prev) => {
+      const updated = [...prev.reviews];
+      const review = { ...updated[reviewIndex] };
+      review.newImages = (review.newImages || []).filter((_, i) => i !== fileIndex);
+      updated[reviewIndex] = review;
+      return { ...prev, reviews: updated };
+    });
+  };
+
   // Submit form
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     const fd = new FormData();
     fd.append("title", formData.title);
     fd.append("description", formData.description);
     fd.append("price", formData.price);
-    fd.append("comparePrice", formData.comparePrice); // NEW
+    fd.append("comparePrice", formData.comparePrice);
     fd.append("category", formData.category);
     fd.append("collection", formData.collection);
     fd.append("isCustomizable", formData.isCustomizable);
-    fd.append(
-      "customizationFields",
-      JSON.stringify(formData.customizationFields)
-    );
+    fd.append("customizationFields", JSON.stringify(formData.customizationFields));
     fd.append("specifications", JSON.stringify(formData.specifications || []));
     fd.append("stock", formData.stock || 0);
     fd.append("images", JSON.stringify(formData.existingImages));
+
+    // product images
     formData.productImages.forEach((file) => fd.append("productImages", file));
+
+    // reviews: prepare serializable payload (exclude newImages Files)
+    const reviewsPayload = formData.reviews.map((r) => {
+      const { newImages, ...rest } = r;
+      return rest;
+    });
+    fd.append("reviews", JSON.stringify(reviewsPayload));
+    fd.append("reviewsToDelete", JSON.stringify(formData.reviewsToDelete || []));
+
+    // append review files individually under keys review_<_id or tempId>
+    formData.reviews.forEach((r) => {
+      const files = r.newImages || [];
+      const key = `review_${r._id || r.tempId}`;
+      files.forEach((f) => fd.append(key, f));
+    });
 
     try {
       setLoading(true);
       if (isEditing) {
-        await api.put(`/products/admin/edit/${editId}`, fd, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
+        await api.put(`/products/admin/edit/${editId}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
       } else {
-        await api.post("/products/add", fd, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
+        await api.post(`/products/add`, fd, { headers: { "Content-Type": "multipart/form-data" } });
       }
       resetForm();
       fetchProducts();
     } catch (err) {
       console.error(err);
+      alert(err?.response?.data?.message || "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -226,20 +281,26 @@ export default function AdminProductPage() {
 
   // Edit product
   const handleEdit = (prod) => {
+    // map existing reviews to include newImages: []
+    const mappedReviews = (prod.reviews || []).map((r) => ({ ...r, newImages: [] }));
+
     setFormData({
-      title: prod.title,
-      description: prod.description,
-      price: prod.price,
-      comparePrice: prod.comparePrice || "", // NEW
-      category: prod.category,
+      title: prod.title || "",
+      description: prod.description || "",
+      price: prod.price || "",
+      comparePrice: prod.comparePrice || "",
+      category: prod.category || "",
       collection: prod.collection || "",
-      isCustomizable: prod.isCustomizable,
+      isCustomizable: !!prod.isCustomizable,
       customizationFields: prod.customizationFields || [],
       specifications: prod.specifications || [],
       stock: prod.stock || 0,
       productImages: [],
       existingImages: prod.images || [],
+      reviews: mappedReviews,
+      reviewsToDelete: [],
     });
+
     setIsEditing(true);
     setEditId(prod._id);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -248,13 +309,13 @@ export default function AdminProductPage() {
 
   // Delete product
   const handleDelete = async (id) => {
-    if (window.confirm("Delete this product?")) {
-      try {
-        await api.delete(`/products/admin/delete/${id}`);
-        fetchProducts();
-      } catch (err) {
-        console.error(err);
-      }
+    if (!window.confirm("Delete this product?")) return;
+    try {
+      await api.delete(`/products/admin/delete/${id}`);
+      fetchProducts();
+    } catch (err) {
+      console.error(err);
+      alert("Delete failed");
     }
   };
 
@@ -271,68 +332,21 @@ export default function AdminProductPage() {
 
       <form className="product-form" onSubmit={handleSubmit}>
         {/* Basic fields */}
-        <input
-          type="text"
-          placeholder="Title"
-          value={formData.title}
-          onChange={(e) =>
-            setFormData({ ...formData, title: e.target.value })
-          }
-        />
-        <textarea
-          placeholder="Description"
-          value={formData.description}
-          onChange={(e) =>
-            setFormData({ ...formData, description: e.target.value })
-          }
-        />
-        <input
-          type="number"
-          placeholder="Price"
-          value={formData.price}
-          onChange={(e) =>
-            setFormData({ ...formData, price: e.target.value })
-          }
-        />
-        <input
-          type="number"
-          placeholder="Compare Price"
-          value={formData.comparePrice}
-          onChange={(e) =>
-            setFormData({ ...formData, comparePrice: e.target.value })
-          }
-        />
-        <input
-          type="text"
-          placeholder="Category"
-          value={formData.category}
-          onChange={(e) =>
-            setFormData({ ...formData, category: e.target.value })
-          }
-        />
-        <select
-          value={formData.collection}
-          onChange={(e) =>
-            setFormData({ ...formData, collection: e.target.value })
-          }
-        >
+        <input type="text" placeholder="Title" value={formData.title} onChange={(e) => setFormData((p) => ({ ...p, title: e.target.value }))} required />
+        <textarea placeholder="Description" value={formData.description} onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))} />
+        <input type="number" placeholder="Price" value={formData.price} onChange={(e) => setFormData((p) => ({ ...p, price: e.target.value }))} required />
+        <input type="number" placeholder="Compare Price" value={formData.comparePrice} onChange={(e) => setFormData((p) => ({ ...p, comparePrice: e.target.value }))} />
+        <input type="text" placeholder="Category" value={formData.category} onChange={(e) => setFormData((p) => ({ ...p, category: e.target.value }))} />
+
+        <select value={formData.collection} onChange={(e) => setFormData((p) => ({ ...p, collection: e.target.value }))}>
           <option value="">Select Collection</option>
           {collections.map((col) => (
-            <option key={col._id} value={col._id}>
-              {col.name}
-            </option>
+            <option key={col._id} value={col._id}>{col.name}</option>
           ))}
         </select>
 
         <label>
-          <input
-            type="checkbox"
-            checked={formData.isCustomizable}
-            onChange={(e) =>
-              setFormData({ ...formData, isCustomizable: e.target.checked })
-            }
-          />
-          Customizable
+          <input type="checkbox" checked={formData.isCustomizable} onChange={(e) => setFormData((p) => ({ ...p, isCustomizable: e.target.checked }))} /> Customizable
         </label>
 
         {/* Customization fields */}
@@ -341,32 +355,16 @@ export default function AdminProductPage() {
             <h4>Customization Fields</h4>
             {formData.customizationFields.map((field, i) => (
               <div key={i} className="custom-field">
-                <input
-                  type="text"
-                  placeholder="Label"
-                  value={field.label}
-                  onChange={(e) =>
-                    updateCustomizationField(i, "label", e.target.value)
-                  }
-                />
-                <select
-                  value={field.type}
-                  onChange={(e) =>
-                    updateCustomizationField(i, "type", e.target.value)
-                  }
-                >
+                <input type="text" placeholder="Label" value={field.label} onChange={(e) => updateCustomizationField(i, "label", e.target.value)} />
+                <select value={field.type} onChange={(e) => updateCustomizationField(i, "type", e.target.value)}>
                   <option value="text">Text</option>
                   <option value="number">Number</option>
                   <option value="file">File Upload</option>
                 </select>
-                <button type="button" onClick={() => removeCustomizationField(i)}>
-                  X
-                </button>
+                <button type="button" onClick={() => removeCustomizationField(i)}>X</button>
               </div>
             ))}
-            <button type="button" onClick={addCustomizationField}>
-              + Add Field
-            </button>
+            <button type="button" onClick={addCustomizationField}>+ Add Field</button>
           </div>
         )}
 
@@ -374,14 +372,7 @@ export default function AdminProductPage() {
         {formData.specifications.length === 0 && (
           <div className="simple-stock">
             <h4>Stock</h4>
-            <input
-              type="number"
-              placeholder="Stock"
-              value={formData.stock}
-              onChange={(e) =>
-                setFormData({ ...formData, stock: Number(e.target.value) })
-              }
-            />
+            <input type="number" placeholder="Stock" value={formData.stock} onChange={(e) => setFormData((p) => ({ ...p, stock: Number(e.target.value) }))} />
           </div>
         )}
 
@@ -390,51 +381,21 @@ export default function AdminProductPage() {
           <h4>Specifications</h4>
           {formData.specifications.map((spec, i) => (
             <div key={i} className="spec-block">
-              <input
-                type="text"
-                placeholder="Spec Key"
-                value={spec.key}
-                onChange={(e) => updateSpecificationKey(i, e.target.value)}
-              />
+              <input type="text" placeholder="Spec Key" value={spec.key} onChange={(e) => updateSpecificationKey(i, e.target.value)} />
               <div className="spec-values">
                 {spec.values.map((val, j) => (
                   <div key={j} className="spec-value">
-                    <input
-                      type="text"
-                      placeholder="Value"
-                      value={val.value}
-                      onChange={(e) =>
-                        updateSpecValue(i, j, "value", e.target.value)
-                      }
-                    />
-                    <input
-                      type="number"
-                      placeholder="Stock"
-                      value={val.stock}
-                      onChange={(e) =>
-                        updateSpecValue(i, j, "stock", e.target.value)
-                      }
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeSpecValue(i, j)}
-                    >
-                      X
-                    </button>
+                    <input type="text" placeholder="Value" value={val.value} onChange={(e) => updateSpecValue(i, j, "value", e.target.value)} />
+                    <input type="number" placeholder="Stock" value={val.stock} onChange={(e) => updateSpecValue(i, j, "stock", e.target.value)} />
+                    <button type="button" onClick={() => removeSpecValue(i, j)}>X</button>
                   </div>
                 ))}
-                <button type="button" onClick={() => addSpecValue(i)}>
-                  + Add Value
-                </button>
+                <button type="button" onClick={() => addSpecValue(i)}>+ Add Value</button>
               </div>
-              <button type="button" onClick={() => removeSpecification(i)}>
-                Remove Spec
-              </button>
+              <button type="button" onClick={() => removeSpecification(i)}>Remove Spec</button>
             </div>
           ))}
-          <button type="button" onClick={addSpecification}>
-            + Add Specification
-          </button>
+          <button type="button" onClick={addSpecification}>+ Add Specification</button>
         </div>
 
         {/* Images */}
@@ -442,65 +403,72 @@ export default function AdminProductPage() {
           <h4>Images</h4>
           <div className="existing-images">
             {formData.existingImages.map((img, i) => (
-              <div
-                key={i}
-                className={`preview-image ${
-                  dragOverExistingIndex === i ? "drag-over" : ""
-                }`}
-                draggable
-                onDragStart={() => handleDragStartExisting(i)}
-                onDragEnter={() => handleDragEnterExisting(i)}
-                onDragOver={(e) => e.preventDefault()}
-                onDragEnd={handleDragEndExisting}
-              >
+              <div key={i} className={`preview-image ${dragOverExistingIndex === i ? "drag-over" : ""}`} draggable onDragStart={() => handleDragStartExisting(i)} onDragEnter={() => handleDragEnterExisting(i)} onDragOver={(e) => e.preventDefault()} onDragEnd={handleDragEndExisting}>
                 <img src={img} alt="existing" />
-                <button type="button" onClick={() => removeExistingImage(i)}>
-                  Remove
-                </button>
+                <button type="button" onClick={() => removeExistingImage(i)}>Remove</button>
               </div>
             ))}
           </div>
+
           <div className="file-input-wrapper">
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              ref={fileInputRef}
-              onChange={handleFileChange}
-            />
+            <input type="file" accept="image/*" multiple ref={fileInputRef} onChange={handleFileChange} />
           </div>
+
           {formData.productImages.length > 0 && (
             <div className="preview-images">
               {formData.productImages.map((file, index) => (
-                <div
-                  key={index}
-                  className={`preview-image ${
-                    dragOverNewIndex === index ? "drag-over" : ""
-                  }`}
-                  draggable
-                  onDragStart={() => handleDragStartNew(index)}
-                  onDragEnter={() => handleDragEnterNew(index)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDragEnd={handleDragEndNew}
-                >
+                <div key={index} className={`preview-image ${dragOverNewIndex === index ? "drag-over" : ""}`} draggable onDragStart={() => handleDragStartNew(index)} onDragEnter={() => handleDragEnterNew(index)} onDragOver={(e) => e.preventDefault()} onDragEnd={handleDragEndNew}>
                   <img src={URL.createObjectURL(file)} alt="preview" />
-                  <button type="button" onClick={() => removeNewImage(index)}>
-                    Remove
-                  </button>
+                  <button type="button" onClick={() => removeNewImage(index)}>Remove</button>
                 </div>
               ))}
             </div>
           )}
         </div>
 
+        {/* ================ Reviews Section ================ */}
+        <div className="reviews-section">
+          <h4>Reviews (admin)</h4>
+          {formData.reviews.map((review, i) => (
+            <div className="review-block" key={review._id || review.tempId || i}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input type="text" placeholder="Reviewer Name" value={review.name || ""} onChange={(e) => updateReview(i, "name", e.target.value)} />
+                <input type="number" min={1} max={5} value={review.rating || 5} onChange={(e) => updateReview(i, "rating", Number(e.target.value))} style={{ width: 80 }} />
+                <button type="button" onClick={() => removeReview(i)}>Delete Review</button>
+              </div>
+              <textarea placeholder="Comment" value={review.comment || ""} onChange={(e) => updateReview(i, "comment", e.target.value)} />
+
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+                <input type="file" multiple onChange={(e) => handleReviewImageUpload(i, Array.from(e.target.files))} />
+
+                <div className="review-images-preview">
+                  {/* existing images */}
+                  {(review.images || []).map((img, idx) => (
+                    <div key={idx} style={{ position: "relative" }}>
+                      <img src={img} alt={`r-${idx}`} width={60} />
+                      <button type="button" onClick={() => removeReviewExistingImage(i, idx)}>x</button>
+                    </div>
+                  ))}
+
+                  {/* newly selected images (local previews) */}
+                  {(review.newImages || []).map((file, idx) => (
+                    <div key={idx} style={{ position: "relative" }}>
+                      <img src={URL.createObjectURL(file)} alt={`new-${idx}`} width={60} />
+                      <button type="button" onClick={() => removeReviewNewImage(i, idx)}>x</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <div style={{ marginTop: 8 }}>
+            <button type="button" onClick={addReview}>+ Add Review</button>
+          </div>
+        </div>
+
         <div className="form-actions">
-          <button type="submit" disabled={loading}>
-            {loading
-              ? "Saving..."
-              : isEditing
-              ? "Update Product"
-              : "Add Product"}
-          </button>
+          <button type="submit" disabled={loading}>{loading ? "Saving..." : isEditing ? "Update Product" : "Add Product"}</button>
           {isEditing && <button type="button" onClick={resetForm}>Cancel</button>}
         </div>
       </form>
@@ -510,20 +478,9 @@ export default function AdminProductPage() {
       <div className="products-list">
         {products.map((prod) => (
           <div className="product-card" key={prod._id}>
-            <img
-              src={prod.images?.[0] || "https://via.placeholder.com/150"}
-              alt={prod.title}
-            />
+            <img src={prod.images?.[0] || "https://via.placeholder.com/150"} alt={prod.title} />
             <h4>{prod.title}</h4>
-            <p>
-              {prod.comparePrice && prod.comparePrice > prod.price ? (
-                <span>
-                  <s>₹{prod.comparePrice}</s> ₹{prod.price}
-                </span>
-              ) : (
-                <>₹{prod.price}</>
-              )}
-            </p>
+            <p>{prod.comparePrice && prod.comparePrice > prod.price ? (<span><s>₹{prod.comparePrice}</s> ₹{prod.price}</span>) : (<>₹{prod.price}</>)}</p>
             <p>{prod.category}</p>
             <div className="product-actions">
               <button onClick={() => handleEdit(prod)}>Edit</button>
