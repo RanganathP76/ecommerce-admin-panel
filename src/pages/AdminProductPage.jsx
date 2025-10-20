@@ -10,6 +10,7 @@ export default function AdminProductPage() {
   const [editId, setEditId] = useState(null);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef(null);
+  const videoInputRef = useRef(null); // ✅ New ref for videos
 
   // Drag & drop states
   const dragItemExisting = useRef(null);
@@ -32,11 +33,15 @@ export default function AdminProductPage() {
       customizationFields: [],
       specifications: [],
       stock: 0,
-      productImages: [], // File objects to upload
-      existingImages: [], // existing image URLs
+
+      // Media
+      productImages: [],
+      existingImages: [],
+      productVideos: [], // ✅ new
+      existingVideos: [], // ✅ new
 
       // Reviews
-      reviews: [], // { _id?, tempId?, name, rating, comment, images: [url], newImages: [File] }
+      reviews: [],
       reviewsToDelete: [],
     };
   }
@@ -65,7 +70,9 @@ export default function AdminProductPage() {
     fetchCollections();
   }, []);
 
-  // File handlers (product images)
+  // =========================
+  // IMAGE HANDLERS
+  // =========================
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
     setFormData((prev) => ({ ...prev, productImages: [...prev.productImages, ...files] }));
@@ -125,7 +132,34 @@ export default function AdminProductPage() {
     dragOverNew.current = null;
   };
 
-  // Customization fields
+  // =========================
+  // VIDEO HANDLERS
+  // =========================
+  const handleVideoChange = (e) => {
+    const files = Array.from(e.target.files);
+    setFormData((prev) => ({ ...prev, productVideos: [...prev.productVideos, ...files] }));
+  };
+
+  const removeNewVideo = (index) => {
+    setFormData((prev) => {
+      const updated = [...prev.productVideos];
+      updated.splice(index, 1);
+      return { ...prev, productVideos: updated };
+    });
+    if (videoInputRef.current) videoInputRef.current.value = "";
+  };
+
+  const removeExistingVideo = (index) => {
+    setFormData((prev) => {
+      const updated = [...prev.existingVideos];
+      updated.splice(index, 1);
+      return { ...prev, existingVideos: updated };
+    });
+  };
+
+  // =========================
+  // CUSTOMIZATION + SPECS
+  // =========================
   const addCustomizationField = () =>
     setFormData((prev) => ({ ...prev, customizationFields: [...prev.customizationFields, { label: "", type: "text" }] }));
   const updateCustomizationField = (index, key, value) =>
@@ -141,7 +175,6 @@ export default function AdminProductPage() {
       return { ...prev, customizationFields: updated };
     });
 
-  // Specifications
   const addSpecification = () =>
     setFormData((prev) => ({ ...prev, specifications: [...prev.specifications, { key: "", values: [] }] }));
   const updateSpecificationKey = (index, value) =>
@@ -175,10 +208,15 @@ export default function AdminProductPage() {
       return { ...prev, specifications: updated };
     });
 
-  // ===== Reviews handlers =====
+  // =========================
+  // REVIEWS
+  // =========================
   const addReview = () => {
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    setFormData((prev) => ({ ...prev, reviews: [...prev.reviews, { tempId, name: "", rating: 5, comment: "", images: [], newImages: [] }] }));
+    setFormData((prev) => ({
+      ...prev,
+      reviews: [...prev.reviews, { tempId, name: "", rating: 5, comment: "", images: [], newImages: [] }],
+    }));
   };
 
   const updateReview = (index, key, value) => {
@@ -227,7 +265,9 @@ export default function AdminProductPage() {
     });
   };
 
-  // Submit form
+  // =========================
+  // SUBMIT FORM
+  // =========================
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -242,20 +282,17 @@ export default function AdminProductPage() {
     fd.append("customizationFields", JSON.stringify(formData.customizationFields));
     fd.append("specifications", JSON.stringify(formData.specifications || []));
     fd.append("stock", formData.stock || 0);
+
+    // ✅ Images & Videos
     fd.append("images", JSON.stringify(formData.existingImages));
+    fd.append("videos", JSON.stringify(formData.existingVideos));
+    formData.productImages.forEach((f) => fd.append("productImages", f));
+    formData.productVideos.forEach((f) => fd.append("productVideos", f));
 
-    // product images
-    formData.productImages.forEach((file) => fd.append("productImages", file));
-
-    // reviews: prepare serializable payload (exclude newImages Files)
-    const reviewsPayload = formData.reviews.map((r) => {
-      const { newImages, ...rest } = r;
-      return rest;
-    });
+    // ✅ Reviews
+    const reviewsPayload = formData.reviews.map(({ newImages, ...rest }) => rest);
     fd.append("reviews", JSON.stringify(reviewsPayload));
     fd.append("reviewsToDelete", JSON.stringify(formData.reviewsToDelete || []));
-
-    // append review files individually under keys review_<_id or tempId>
     formData.reviews.forEach((r) => {
       const files = r.newImages || [];
       const key = `review_${r._id || r.tempId}`;
@@ -279,11 +316,11 @@ export default function AdminProductPage() {
     }
   };
 
-  // Edit product
+  // =========================
+  // EDIT PRODUCT
+  // =========================
   const handleEdit = (prod) => {
-    // map existing reviews to include newImages: []
     const mappedReviews = (prod.reviews || []).map((r) => ({ ...r, newImages: [] }));
-
     setFormData({
       title: prod.title || "",
       description: prod.description || "",
@@ -297,17 +334,21 @@ export default function AdminProductPage() {
       stock: prod.stock || 0,
       productImages: [],
       existingImages: prod.images || [],
+      productVideos: [], // ✅ added
+      existingVideos: prod.videos || [], // ✅ added
       reviews: mappedReviews,
       reviewsToDelete: [],
     });
-
     setIsEditing(true);
     setEditId(prod._id);
     window.scrollTo({ top: 0, behavior: "smooth" });
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (videoInputRef.current) videoInputRef.current.value = "";
   };
 
-  // Delete product
+  // =========================
+  // DELETE + RESET
+  // =========================
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this product?")) return;
     try {
@@ -324,8 +365,12 @@ export default function AdminProductPage() {
     setIsEditing(false);
     setEditId(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (videoInputRef.current) videoInputRef.current.value = "";
   };
 
+  // =========================
+  // JSX
+  // =========================
   return (
     <div className="admin-products">
       <h2>{isEditing ? "Edit Product" : "Add Product"}</h2>
@@ -349,7 +394,7 @@ export default function AdminProductPage() {
           <input type="checkbox" checked={formData.isCustomizable} onChange={(e) => setFormData((p) => ({ ...p, isCustomizable: e.target.checked }))} /> Customizable
         </label>
 
-        {/* Customization fields */}
+        {/* Customization Fields */}
         {formData.isCustomizable && (
           <div className="customization-fields">
             <h4>Customization Fields</h4>
@@ -368,7 +413,7 @@ export default function AdminProductPage() {
           </div>
         )}
 
-        {/* Simple stock */}
+        {/* Stock */}
         {formData.specifications.length === 0 && (
           <div className="simple-stock">
             <h4>Stock</h4>
@@ -398,7 +443,7 @@ export default function AdminProductPage() {
           <button type="button" onClick={addSpecification}>+ Add Specification</button>
         </div>
 
-        {/* Images */}
+        {/* IMAGES */}
         <div className="images-section">
           <h4>Images</h4>
           <div className="existing-images">
@@ -426,7 +471,34 @@ export default function AdminProductPage() {
           )}
         </div>
 
-        {/* ================ Reviews Section ================ */}
+        {/* ✅ VIDEOS SECTION */}
+        <div className="videos-section">
+          <h4>Videos</h4>
+
+          <div className="existing-videos">
+            {formData.existingVideos.map((vid, i) => (
+              <div key={i} className="preview-video">
+                <video src={vid} controls width="200" />
+                <button type="button" onClick={() => removeExistingVideo(i)}>Remove</button>
+              </div>
+            ))}
+          </div>
+
+          <input type="file" accept="video/*" multiple ref={videoInputRef} onChange={handleVideoChange} />
+
+          {formData.productVideos.length > 0 && (
+            <div className="preview-videos">
+              {formData.productVideos.map((file, i) => (
+                <div key={i} className="preview-video">
+                  <video src={URL.createObjectURL(file)} controls width="200" />
+                  <button type="button" onClick={() => removeNewVideo(i)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* REVIEWS */}
         <div className="reviews-section">
           <h4>Reviews (admin)</h4>
           {formData.reviews.map((review, i) => (
@@ -442,15 +514,12 @@ export default function AdminProductPage() {
                 <input type="file" multiple onChange={(e) => handleReviewImageUpload(i, Array.from(e.target.files))} />
 
                 <div className="review-images-preview">
-                  {/* existing images */}
                   {(review.images || []).map((img, idx) => (
                     <div key={idx} style={{ position: "relative" }}>
                       <img src={img} alt={`r-${idx}`} width={60} />
                       <button type="button" onClick={() => removeReviewExistingImage(i, idx)}>x</button>
                     </div>
                   ))}
-
-                  {/* newly selected images (local previews) */}
                   {(review.newImages || []).map((file, idx) => (
                     <div key={idx} style={{ position: "relative" }}>
                       <img src={URL.createObjectURL(file)} alt={`new-${idx}`} width={60} />
@@ -473,14 +542,20 @@ export default function AdminProductPage() {
         </div>
       </form>
 
-      {/* Product List */}
+      {/* PRODUCT LIST */}
       <h2>All Products</h2>
       <div className="products-list">
         {products.map((prod) => (
           <div className="product-card" key={prod._id}>
             <img src={prod.images?.[0] || "https://via.placeholder.com/150"} alt={prod.title} />
             <h4>{prod.title}</h4>
-            <p>{prod.comparePrice && prod.comparePrice > prod.price ? (<span><s>₹{prod.comparePrice}</s> ₹{prod.price}</span>) : (<>₹{prod.price}</>)}</p>
+            <p>
+              {prod.comparePrice && prod.comparePrice > prod.price ? (
+                <span><s>₹{prod.comparePrice}</s> ₹{prod.price}</span>
+              ) : (
+                <>₹{prod.price}</>
+              )}
+            </p>
             <p>{prod.category}</p>
             <div className="product-actions">
               <button onClick={() => handleEdit(prod)}>Edit</button>

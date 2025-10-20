@@ -246,3 +246,29 @@
   transform: scale(1.03);
   z-index: 2;
 }
+
+.videos-section video {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  margin-right: 10px;
+}
+
+.preview-video {
+  display: inline-block;
+  position: relative;
+  margin: 8px;
+}
+
+.preview-video button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background: #ff4d4f;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  font-size: 14px;
+}
