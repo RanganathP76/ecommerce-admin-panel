@@ -272,3 +272,45 @@
   cursor: pointer;
   font-size: 14px;
 }
+
+
+.description-section {
+  border: 1px solid #ddd;
+  padding: 10px;
+  margin-bottom: 20px;
+  border-radius: 6px;
+}
+.desc-part {
+  background: #fafafa;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+}
+.desc-part input[type="text"],
+.desc-part textarea {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+
+.desc-media-preview {
+  position: relative;
+  margin-top: 8px;
+}
+
+.remove-media-btn {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 8px;
+  background: #ff4d4d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.remove-media-btn:hover {
+  background: #e60000;
+}

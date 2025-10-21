@@ -24,7 +24,10 @@ export default function AdminProductPage() {
   function initialFormData() {
     return {
       title: "",
-      description: "",
+      description: [
+  { headline: "", text: "", image: "", video: "" }
+],
+
       price: "",
       comparePrice: "",
       category: "",
@@ -273,7 +276,19 @@ export default function AdminProductPage() {
 
     const fd = new FormData();
     fd.append("title", formData.title);
-    fd.append("description", formData.description);
+    fd.append("description", JSON.stringify(formData.description.map(d => ({
+  headline: d.headline,
+  text: d.text,
+  image: typeof d.image === "string" ? d.image : "",
+  video: typeof d.video === "string" ? d.video : "",
+}))));
+
+// Upload new description media files
+formData.description.forEach((d) => {
+  if (d.image && typeof d.image !== "string") fd.append("descriptionImages", d.image);
+  if (d.video && typeof d.video !== "string") fd.append("descriptionVideos", d.video);
+});
+
     fd.append("price", formData.price);
     fd.append("comparePrice", formData.comparePrice);
     fd.append("category", formData.category);
@@ -323,7 +338,16 @@ export default function AdminProductPage() {
     const mappedReviews = (prod.reviews || []).map((r) => ({ ...r, newImages: [] }));
     setFormData({
       title: prod.title || "",
-      description: prod.description || "",
+      description:
+  Array.isArray(prod.description) && prod.description.length > 0
+    ? prod.description.map((d) => ({
+        headline: d.headline || "",
+        text: d.text || "",
+        image: d.image || "",
+        video: d.video || "",
+      }))
+    : [{ headline: "", text: "", image: "", video: "" }],
+
       price: prod.price || "",
       comparePrice: prod.comparePrice || "",
       category: prod.category || "",
@@ -378,7 +402,134 @@ export default function AdminProductPage() {
       <form className="product-form" onSubmit={handleSubmit}>
         {/* Basic fields */}
         <input type="text" placeholder="Title" value={formData.title} onChange={(e) => setFormData((p) => ({ ...p, title: e.target.value }))} required />
-        <textarea placeholder="Description" value={formData.description} onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))} />
+        <div className="description-section">
+  <h4>Product Description (multi-part)</h4>
+  {formData.description.map((desc, i) => (
+    <div key={i} className="desc-part">
+      <input
+        type="text"
+        placeholder="Headline"
+        value={desc.headline}
+        onChange={(e) => {
+          const updated = [...formData.description];
+          updated[i].headline = e.target.value;
+          setFormData({ ...formData, description: updated });
+        }}
+      />
+      <textarea
+        placeholder="Text Description"
+        value={desc.text}
+        onChange={(e) => {
+          const updated = [...formData.description];
+          updated[i].text = e.target.value;
+          setFormData({ ...formData, description: updated });
+        }}
+      />
+
+      {/* Image Upload */}
+<label>Image:</label>
+<input
+  type="file"
+  accept="image/*"
+  onChange={(e) => {
+    const file = e.target.files[0];
+    const updated = [...formData.description];
+    updated[i].image = file;
+    setFormData({ ...formData, description: updated });
+  }}
+/>
+
+{desc.image && (
+  <div className="desc-media-preview">
+    {typeof desc.image === "string" ? (
+      <img src={desc.image} alt="desc" style={{ width: 120, marginTop: 8 }} />
+    ) : (
+      <img
+        src={URL.createObjectURL(desc.image)}
+        alt="desc"
+        style={{ width: 120, marginTop: 8 }}
+      />
+    )}
+    <button
+      type="button"
+      className="remove-media-btn"
+      onClick={() => {
+        const updated = [...formData.description];
+        updated[i].image = "";
+        setFormData({ ...formData, description: updated });
+      }}
+    >
+      Remove Image
+    </button>
+  </div>
+)}
+
+{/* Video Upload */}
+<label>Video:</label>
+<input
+  type="file"
+  accept="video/*"
+  onChange={(e) => {
+    const file = e.target.files[0];
+    const updated = [...formData.description];
+    updated[i].video = file;
+    setFormData({ ...formData, description: updated });
+  }}
+/>
+
+{desc.video && (
+  <div className="desc-media-preview">
+    {typeof desc.video === "string" ? (
+      <video src={desc.video} controls width={180} style={{ marginTop: 8 }} />
+    ) : (
+      <video
+        src={URL.createObjectURL(desc.video)}
+        controls
+        width={180}
+        style={{ marginTop: 8 }}
+      />
+    )}
+    <button
+      type="button"
+      className="remove-media-btn"
+      onClick={() => {
+        const updated = [...formData.description];
+        updated[i].video = "";
+        setFormData({ ...formData, description: updated });
+      }}
+    >
+      Remove Video
+    </button>
+  </div>
+)}
+
+
+      <button
+        type="button"
+        onClick={() => {
+          const updated = [...formData.description];
+          updated.splice(i, 1);
+          setFormData({ ...formData, description: updated });
+        }}
+      >
+        Remove Section
+      </button>
+    </div>
+  ))}
+
+  <button
+    type="button"
+    onClick={() =>
+      setFormData((prev) => ({
+        ...prev,
+        description: [...prev.description, { headline: "", text: "", image: "", video: "" }],
+      }))
+    }
+  >
+    + Add Description Part
+  </button>
+</div>
+
         <input type="number" placeholder="Price" value={formData.price} onChange={(e) => setFormData((p) => ({ ...p, price: e.target.value }))} required />
         <input type="number" placeholder="Compare Price" value={formData.comparePrice} onChange={(e) => setFormData((p) => ({ ...p, comparePrice: e.target.value }))} />
         <input type="text" placeholder="Category" value={formData.category} onChange={(e) => setFormData((p) => ({ ...p, category: e.target.value }))} />
