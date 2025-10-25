@@ -9,6 +9,7 @@ import AdminProductPage from "./pages/AdminProductPage";
 import AdminOrdersPage from "./pages/AdminOrdersPage";
 import AdminPaymentConfigPage from "./pages/AdminPaymentConfigPage";
 import AdminShippingRatePage from "./pages/AdminShippingRatePage";
+import BannerAdmin from "./pages/BannerAdmin";
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem("adminToken");
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="products" element={<AdminProductPage />} />
           <Route path="payment-config" element={<AdminPaymentConfigPage />} />
           <Route path="shipping-rates" element={<AdminShippingRatePage />} />
+          <Route path="banners" element={<BannerAdmin />} />
         </Route>
       </Routes>
     </Router>

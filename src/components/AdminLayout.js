@@ -1,6 +1,15 @@
 import React from "react";
 import { Link, Outlet, useNavigate } from "react-router-dom";
-import { FaChartPie, FaBox, FaClipboardList, FaShippingFast, FaCog, FaTags, FaSignOutAlt } from "react-icons/fa";
+import {
+  FaChartPie,
+  FaBox,
+  FaClipboardList,
+  FaShippingFast,
+  FaCog,
+  FaTags,
+  FaImages,
+  FaSignOutAlt
+} from "react-icons/fa";
 import "./AdminLayout.css";
 
 export default function AdminLayout() {
@@ -14,12 +23,13 @@ export default function AdminLayout() {
   return (
     <div className="admin-container">
       <aside className="sidebar">
-        <h2 className="logo">Admin</h2>
+        <h2 className="logo">Admin Panel</h2>
         <nav>
           <Link to="/dashboard"><FaChartPie /> Analytics</Link>
           <Link to="/collections"><FaTags /> Collections</Link>
-          <Link to="/orders"><FaClipboardList /> Orders</Link>
+          <Link to="/banners"><FaImages /> Banners</Link> {/* Added Banners */}
           <Link to="/products"><FaBox /> Products</Link>
+          <Link to="/orders"><FaClipboardList /> Orders</Link>
           <Link to="/payment-config"><FaCog /> Payment Config</Link>
           <Link to="/shipping-rates"><FaShippingFast /> Shipping Rates</Link>
         </nav>
@@ -34,3 +44,4 @@ export default function AdminLayout() {
     </div>
   );
 }
+

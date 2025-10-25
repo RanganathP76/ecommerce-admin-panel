@@ -1,0 +1,153 @@
+.admin-banners {
+  padding: 2rem;
+  max-width: 1000px;
+  margin: auto;
+  color: #333;
+}
+
+.admin-banners h2 {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.banner-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: #f9f9f9;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.banner-form input[type="text"],
+.banner-form textarea {
+  padding: 0.8rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+
+.file-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.remove-file-btn {
+  background: #ff4d4d;
+  border: none;
+  color: white;
+  padding: 0.4rem 0.8rem;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.form-actions button {
+  padding: 0.7rem 1.4rem;
+  border: none;
+  border-radius: 8px;
+  background: #007bff;
+  color: white;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.form-actions button:hover {
+  background: #0056b3;
+}
+
+.banners-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.banner-card {
+  background: white;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  transition: 0.3s;
+}
+
+.banner-card:hover {
+  transform: translateY(-3px);
+}
+
+.banner-card img {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+}
+
+.banner-info {
+  padding: 1rem;
+}
+
+.banner-info h3 {
+  margin-bottom: 0.3rem;
+}
+
+.banner-info a {
+  color: #007bff;
+  font-size: 0.9rem;
+  word-break: break-all;
+}
+
+.status {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+}
+
+.status.active {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status.inactive {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.banner-actions {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.8rem;
+  border-top: 1px solid #eee;
+}
+
+.banner-actions button {
+  flex: 1;
+  margin: 0 0.3rem;
+  padding: 0.5rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.edit-btn {
+  background: #ffc107;
+  color: #333;
+}
+
+.delete-btn {
+  background: #dc3545;
+  color: white;
+}
