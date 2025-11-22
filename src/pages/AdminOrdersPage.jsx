@@ -1,20 +1,56 @@
-// AdminOrdersPage.js
+// AdminOrdersPage.js (UPGRADED — fixes pincode, customization blanks, PDF spacing, uses /orders/admin/order/:id)
+
 import React, { useEffect, useState } from "react";
 import api from "../utils/axiosInstance";
 import "./AdminOrdersPage.css";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+/**
+ * Helper: decode common HTML entities and collapse extra whitespace
+ */
+function cleanText(raw) {
+  if (raw === null || raw === undefined) return "";
+  if (typeof raw !== "string") raw = String(raw);
+  // decode basic HTML entities using a textarea (browser-only)
+  try {
+    const t = document.createElement("textarea");
+    t.innerHTML = raw;
+    raw = t.value;
+  } catch (e) {
+    // fallback: replace common entity
+    raw = raw.replace(/&amp;/g, "&").replace(/&nbsp;/g, " ");
+  }
+  // collapse repeated whitespace and trim
+  return raw.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Ensure phone is in international format for wa.me
+ * If 10-digit number and no country code, assume India (91).
+ * If already starts with +, remove + for wa.me.
+ */
+function formatPhoneForWhatsApp(phone = "") {
+  if (!phone) return "";
+  let p = phone.replace(/[^\d+]/g, "");
+  if (p.startsWith("+")) p = p.slice(1);
+  // if it's 10 digits assume India
+  if (/^\d{10}$/.test(p)) p = "91" + p;
+  return p;
+}
+
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [detailedOrder, setDetailedOrder] = useState(null);
 
+  // fetch all orders (admin)
   const fetchOrders = async () => {
     try {
       setLoading(true);
       const res = await api.get("/orders/admin/all");
-      setOrders(res.data);
+      setOrders(res.data || []);
     } catch (err) {
       console.error("Error fetching orders", err);
     } finally {
@@ -26,94 +62,229 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, []);
 
-  // ✅ Update order status instantly
+  // fetch single order with admin route
+  const loadDetailedOrder = async (id) => {
+    try {
+      const res = await api.get(`/orders/admin/order/${id}`);
+      setDetailedOrder(res.data);
+    } catch (err) {
+      console.error("Failed loading detailed order", err);
+      setDetailedOrder(null);
+    }
+  };
+
+  const openDetails = (order) => {
+    setSelectedOrder(order);
+    loadDetailedOrder(order._id);
+  };
+
+  const closeDetails = () => {
+    setSelectedOrder(null);
+    setDetailedOrder(null);
+  };
+
+  // update status
   const updateStatus = async (id, status) => {
     try {
       await api.put(`/orders/admin/update/${id}`, { status });
-      setOrders((prev) =>
-        prev.map((order) =>
-          order._id === id ? { ...order, orderStatus: status } : order
-        )
-      );
+      setOrders((prev) => prev.map((o) => (o._id === id ? { ...o, orderStatus: status } : o)));
+      if (detailedOrder?._id === id) setDetailedOrder({ ...detailedOrder, orderStatus: status });
     } catch (err) {
       console.error("Error updating order", err);
+      alert("Failed to update status");
     }
   };
 
-  // ✅ Delete order
+  // delete order
   const deleteOrder = async (id) => {
-    if (window.confirm("Delete this order?")) {
-      try {
-        await api.delete(`/orders/admin/delete/${id}`);
-        setOrders((prev) => prev.filter((order) => order._id !== id));
-      } catch (err) {
-        console.error("Error deleting order", err);
-      }
+    if (!window.confirm("Delete this order?")) return;
+    try {
+      await api.delete(`/orders/admin/delete/${id}`);
+      setOrders((prev) => prev.filter((o) => o._id !== id));
+      if (detailedOrder?._id === id) closeDetails();
+    } catch (err) {
+      console.error("Error deleting order", err);
+      alert("Delete failed");
     }
   };
 
-  const openDetails = (order) => setSelectedOrder(order);
-  const closeDetails = () => setSelectedOrder(null);
+  // WhatsApp actions: confirm / status / cancel
+  const sendWhatsApp = (order, type) => {
+    const phoneRaw = order?.shippingInfo?.phone || order?.shippingInfo?.mobile || "";
+    const phone = formatPhoneForWhatsApp(phoneRaw);
+    if (!phone) return alert("Customer mobile number missing");
 
-  // ✅ Download Invoice with Specifications
+    let msg = "";
+    const name = cleanText(order?.shippingInfo?.name || order?.user?.name || "Customer");
+
+    if (type === "confirm") {
+      msg = `📦 *Order Confirmed*\nHi ${name},\nYour order (${order._id}) has been confirmed.\nTotal: ₹${order.totalPrice}\nThanks for shopping with us!`;
+    } else if (type === "status") {
+      msg = `🔄 *Order Status Update*\nOrder ID: ${order._id}\nStatus: ${order.orderStatus}\nIf you have questions reply to this message.`;
+    } else if (type === "cancel") {
+      msg = `❌ *Order Cancelled*\nHi ${name},\nYour order (${order._id}) has been cancelled. If this is a mistake contact support.`;
+    }
+
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, "_blank");
+  };
+
+  /**
+   * Helper: build clean spec string
+   */
+  const extractSpecifications = (item) => {
+    if (!item?.specifications || !Array.isArray(item.specifications) || item.specifications.length === 0) return "-";
+    const arr = item.specifications
+      .map((s) => {
+        const k = cleanText(s.key || s.name || "");
+        const v = cleanText(s.value || s.option || "");
+        return k && v ? `${k}: ${v}` : null;
+      })
+      .filter(Boolean);
+    return arr.length ? arr.join(", ") : "-";
+  };
+
+  /**
+   * Helper: build clean customization string (filter blanks)
+   */
+  const extractCustomization = (item) => {
+    if (!item?.customization || !Array.isArray(item.customization) || item.customization.length === 0) return "-";
+    const arr = item.customization
+      .map((c) => {
+        // c may be { label, value } or { key, value } or simple string
+        const label = cleanText(c.label || c.key || "");
+        const value = c.value === 0 ? "0" : cleanText(c.value);
+        if (!value) return null; // skip empty customization values
+        return label ? `${label}: ${value}` : `${value}`;
+      })
+      .filter(Boolean);
+    return arr.length ? arr.join(" | ") : "-";
+  };
+
+  // PDF generator — improved formatting & spacing
   const downloadInvoice = (order) => {
-    const doc = new jsPDF();
+  if (!order) return;
+  try {
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const left = 40;
+    let cursorY = 40;
 
-    // Header
-    doc.setFontSize(18);
-    doc.text("My Awesome Store", 14, 20);
-    doc.setFontSize(12);
-    doc.text("INVOICE", 14, 28);
+    doc.setFontSize(20);
+    doc.text("Cuztory — Invoice", left, cursorY);
+    cursorY += 28;
 
-    // Order Info
-    doc.setFontSize(10);
-    doc.text(`Order ID: ${order._id}`, 14, 40);
-    doc.text(`Customer: ${order.user?.name || "Guest"}`, 14, 46);
-    doc.text(`Email: ${order.user?.email || order.guestEmail || "N/A"}`, 14, 52);
-    doc.text(`Mobile: ${order.shippingInfo?.phone || "N/A"}`, 14, 58);
-    doc.text(`Status: ${order.orderStatus}`, 14, 64);
-    doc.text(`Placed At: ${new Date(order.createdAt).toLocaleString()}`, 14, 70);
+    doc.setFontSize(11);
+    doc.text(`Order ID: ${order._id}`, left, cursorY);
+    cursorY += 14;
+    doc.text(`Placed At: ${new Date(order.createdAt).toLocaleString()}`, left, cursorY);
+    cursorY += 18;
 
-    // Shipping
-    doc.text("Shipping Address:", 14, 80);
-    doc.text(
-      `${order.shippingInfo?.address}, ${order.shippingInfo?.city}, ${order.shippingInfo?.state} - ${order.shippingInfo?.pincode}`,
-      14,
-      86
-    );
+    const customerName = cleanText(order.user?.name || order.shippingInfo?.name || "Guest");
+    const email = cleanText(order.user?.email || order.guestEmail || (order.shippingInfo?.email || ""));
+    const phone = cleanText(order.shippingInfo?.phone || "");
 
-    // Items with Specifications + Customization
-    const tableData = order.orderItems.map((item) => [
-      item.name,
-      item.quantity,
-      `₹${item.price.toFixed(1)}`,
-      item.specifications?.length
-        ? item.specifications.map((s) => `${s.key}: ${s.value}`).join(", ")
-        : "-",
-      item.customization?.length
-        ? item.customization.map((c) => `${c.label}: ${c.value}`).join(", ")
-        : "-",
-    ]);
+    doc.text(`Customer: ${customerName}`, left, cursorY);
+    cursorY += 14;
+    doc.text(`Email: ${email || "N/A"}`, left, cursorY);
+    cursorY += 14;
+    doc.text(`Phone: ${phone || "N/A"}`, left, cursorY);
+    cursorY += 18;
 
-    autoTable(doc, {
-      head: [["Product", "Qty", "Price", "Specifications", "Customization"]],
-      body: tableData,
-      startY: 100,
-      styles: { fontSize: 9, cellPadding: 3 },
-      headStyles: { fillColor: [22, 160, 133] }, // teal
+    // Shipping Address
+    const shipping = order.shippingInfo || {};
+    const postal = shipping.postalCode || shipping.pincode || shipping.postcode || "";
+    const addressLines = [
+      cleanText(shipping.name || ""),
+      cleanText(shipping.address || ""),
+      `${cleanText(shipping.city || "")}${shipping.city ? ", " : ""}${cleanText(
+        shipping.state || ""
+      )} ${postal ? `- ${cleanText(postal)}` : ""}`,
+      cleanText(shipping.country || ""),
+    ].filter(Boolean);
+
+    doc.text("Shipping Address:", left, cursorY);
+    cursorY += 14;
+    const wrapped = doc.splitTextToSize(addressLines.join(", "), 500);
+    doc.text(wrapped, left, cursorY);
+    cursorY += wrapped.length * 12 + 10;
+
+    // Items table
+    const tableBody = (order.orderItems || []).map((item) => {
+      const priceNum = typeof item.price === "number" ? item.price : Number(item.price || 0);
+      return [
+        cleanText(item.name || "-"),
+        item.quantity || 1,
+        `₹${priceNum.toFixed(2)}`,
+        extractSpecifications(item),
+        extractCustomization(item),
+      ];
     });
 
-    const finalY = doc.lastAutoTable.finalY || 100;
-    doc.text(`Items Price: ₹${order.itemsPrice.toFixed(1)}`, 14, finalY + 10);
-    doc.text(`Shipping: ₹${order.shippingPrice.toFixed(1)}`, 14, finalY + 16);
-    doc.text(`Discount: ₹${order.discount.toFixed(1)}`, 14, finalY + 22);
-    doc.text(`Total: ₹${order.totalPrice.toFixed(1)}`, 14, finalY + 28);
-    doc.text(`Paid: ₹${order.amountPaid.toFixed(1)}`, 14, finalY + 34);
-    doc.text(`Due: ₹${order.amountDue.toFixed(1)}`, 14, finalY + 40);
+    autoTable(doc, {
+      startY: cursorY,
+      head: [["Product", "Qty", "Price", "Specifications", "Customization"]],
+      body: tableBody,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [30, 136, 229] },
+      columnStyles: {
+        0: { cellWidth: 170 },
+        1: { cellWidth: 40, halign: "center" },
+        2: { cellWidth: 70, halign: "right" },
+        3: { cellWidth: 140 },
+        4: { cellWidth: 140 },
+      },
+      theme: "grid",
+    });
+
+    const afterTableY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : cursorY + 80;
+
+    // ------- CLEAN PAYMENT SUMMARY SECTION -------
+    const itemsPrice = Number(order.itemsPrice || 0);
+    const shippingPrice = Number(order.shippingPrice || 0);
+    const discount = Number(order.discount || 0);
+    const total = Number(order.totalPrice || 0);
+    const paid = Number(order.amountPaid || 0);
+    const due = Number(order.amountDue || 0);
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("Payment Summary:", left, afterTableY);
+
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(11);
+
+    let payY = afterTableY + 18;
+
+    const payLines = [
+      `Items Price: ₹${itemsPrice.toFixed(2)}`,
+      `Shipping Charges: ₹${shippingPrice.toFixed(2)}`,
+      `Discount: ₹${discount.toFixed(2)}`,
+      `Total Amount: ₹${total.toFixed(2)}`,
+      `Amount Paid: ₹${paid.toFixed(2)}`,
+      `Amount Due: ₹${due.toFixed(2)}`,
+    ];
+
+    payLines.forEach((line) => {
+      const wrap = doc.splitTextToSize(line, 350);
+      doc.text(wrap, left, payY);
+      payY += wrap.length * 14;
+    });
+    // ------------------------------------------------------
+
+    // Footer
+    const footY = doc.internal.pageSize.height - 40;
+    doc.setFontSize(9);
+    doc.text("Thank you for choosing Cuztory.", left, footY);
 
     doc.save(`Invoice_${order._id}.pdf`);
-  };
+  } catch (err) {
+    console.error("PDF generation failed", err);
+    alert("Failed to generate PDF");
+  }
+};
 
+
+  // render
   return (
     <div className="admin-orders">
       <h2>📦 All Orders</h2>
@@ -125,112 +296,121 @@ export default function AdminOrdersPage() {
           <thead>
             <tr>
               <th>Order ID</th>
-              <th>User</th>
+              <th>Customer</th>
               <th>Total</th>
               <th>Status</th>
-              <th>Placed At</th>
+              <th>Placed</th>
               <th>Actions</th>
             </tr>
           </thead>
+
           <tbody>
-            {orders.length > 0 ? (
-              orders.map((order) => (
-                <tr key={order._id}>
-                  <td>{order._id}</td>
-                  <td>
-                    {order.user?.name || "Guest"} <br />
-                    <small>{order.user?.email || order.guestEmail}</small> <br />
-                    <small>📞 {order.shippingInfo?.phone || "N/A"}</small>
-                  </td>
-                  <td>₹{order.totalPrice.toFixed(1)}</td>
-                  <td>
-                    <select
-                      className="status-select"
-                      value={order.orderStatus}
-                      onChange={(e) => updateStatus(order._id, e.target.value)}
-                    >
-                      {[
-                        "Pending",
-                        "Processing",
-                        "Confirmed",
-                        "Packed",
-                        "In Transit",
-                        "Arriving Tomorrow",
-                        "Out for Delivery",
-                        "Delivered",
-                        "Failed Delivery",
-                        "Cancelled",
-                        "Returned",
-                      ].map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>{new Date(order.createdAt).toLocaleString()}</td>
-                  <td>
-                    <button className="btn-view" onClick={() => openDetails(order)}>👁 View</button>
-                    <button className="btn-delete" onClick={() => deleteOrder(order._id)}>🗑 Delete</button>
-                  </td>
-                </tr>
-              ))
+            {orders.length === 0 ? (
+              <tr><td colSpan="6" style={{ textAlign: "center" }}>No Orders</td></tr>
             ) : (
-              <tr>
-                <td colSpan="6" style={{ textAlign: "center" }}>
-                  No orders found
-                </td>
-              </tr>
+              orders.map((order) => {
+                // show postal code intelligently
+                const postal = order.shippingInfo?.postalCode || order.shippingInfo?.pincode || order.shippingInfo?.postcode || "";
+                return (
+                  <tr key={order._id}>
+                    <td>{order._id}</td>
+                    <td>
+                      <div><strong>{order.user?.name || order.shippingInfo?.name || "Guest"}</strong></div>
+                      <div style={{ fontSize: 12, color: "#666" }}>{order.user?.email || order.guestEmail || ""}</div>
+                      <div style={{ fontSize: 12, color: "#666" }}>📞 {order.shippingInfo?.phone || "N/A"}</div>
+                      <div style={{ fontSize: 12, color: "#666" }}>📮 {postal || "N/A"}</div>
+                    </td>
+                    <td>₹{(Number(order.totalPrice) || 0).toFixed(2)}</td>
+                    <td>
+                      <select
+                        value={order.orderStatus}
+                        onChange={(e) => updateStatus(order._id, e.target.value)}
+                        className="status-select"
+                      >
+                        {[
+                          "Pending",
+                          "Processing",
+                          "Confirmed",
+                          "Packed",
+                          "In Transit",
+                          "Out for Delivery",
+                          "Delivered",
+                          "Failed Delivery",
+                          "Cancelled",
+                          "Returned",
+                        ].map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </td>
+                    <td>{new Date(order.createdAt).toLocaleString()}</td>
+                    <td>
+                      <button className="btn-view" onClick={() => openDetails(order)}>👁 View</button>
+                      <button className="btn-delete" onClick={() => deleteOrder(order._id)}>🗑 Delete</button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       )}
 
-      {/* Modal */}
-      {selectedOrder && (
+      {/* modal */}
+      {detailedOrder && (
         <div className="modal">
-          <div className="modal-content">
+          <div className="modal-content-large">
             <h3>🧾 Order Details</h3>
-            <p><strong>Order ID:</strong> {selectedOrder._id}</p>
-            <p><strong>Customer:</strong> {selectedOrder.user?.name || "Guest"} ({selectedOrder.user?.email || selectedOrder.guestEmail})</p>
-            <p><strong>Mobile:</strong> {selectedOrder.shippingInfo?.phone || "N/A"}</p>
-            <p><strong>Status:</strong> {selectedOrder.orderStatus}</p>
-            <p><strong>Shipping:</strong> {selectedOrder.shippingInfo?.address}, {selectedOrder.shippingInfo?.city}, {selectedOrder.shippingInfo?.state} - {selectedOrder.shippingInfo?.pincode}</p>
 
-            <h4>🛒 Items:</h4>
-            <ul>
-              {selectedOrder.orderItems.map((item, i) => (
-                <li key={i}>
-                  <strong>{item.name}</strong> - ₹{item.price.toFixed(1)} × {item.quantity}
-                  {item.specifications?.length > 0 && (
-                    <div className="specs">
-                      {item.specifications.map((s, idx) => (
-                        <small key={idx}>{s.key}: {s.value}</small>
-                      ))}
-                    </div>
+            <div className="grid2">
+              <div>
+                <p><b>Order ID:</b> {detailedOrder._id}</p>
+                <p><b>Status:</b> {detailedOrder.orderStatus}</p>
+                <p><b>Placed At:</b> {new Date(detailedOrder.createdAt).toLocaleString()}</p>
+              </div>
+
+              <div>
+                <p><b>Customer:</b> {detailedOrder.user?.name || detailedOrder.shippingInfo?.name || "Guest"}</p>
+                <p><b>Email:</b> {detailedOrder.user?.email || detailedOrder.guestEmail}</p>
+                <p><b>Phone:</b> {detailedOrder.shippingInfo?.phone}</p>
+                <p><b>Pincode:</b> {detailedOrder.shippingInfo?.postalCode || detailedOrder.shippingInfo?.pincode || "N/A"}</p>
+              </div>
+            </div>
+
+            <h4>📍 Shipping Info</h4>
+            <p>
+              {cleanText(detailedOrder.shippingInfo?.name || "")}<br />
+              {cleanText(detailedOrder.shippingInfo?.address || "")}<br />
+              {cleanText(detailedOrder.shippingInfo?.city || "")}, {cleanText(detailedOrder.shippingInfo?.state || "")} - {cleanText(detailedOrder.shippingInfo?.postalCode || detailedOrder.shippingInfo?.pincode || "")}
+            </p>
+
+            <h4>🛒 Items</h4>
+            <ul className="item-list">
+              {detailedOrder.orderItems.map((item, idx) => (
+                <li key={idx}>
+                  <b>{cleanText(item.name || "-")}</b> — ₹{(Number(item.price) || 0).toFixed(2)} × {item.quantity || 1}
+                  {item.specifications && item.specifications.length > 0 && (
+                    <div className="info-tag">Specs: {extractSpecifications(item)}</div>
                   )}
-                  {item.customization?.length > 0 && (
-                    <div className="customization-info">
-                      {item.customization.map((c, idx) => (
-                        <small key={idx}>{c.label}: {c.value || "-"}</small>
-                      ))}
-                    </div>
+                  {item.customization && extractCustomization(item) !== "-" && (
+                    <div className="info-tag">Customization: {extractCustomization(item)}</div>
                   )}
                 </li>
               ))}
             </ul>
 
-            <h4>💰 Totals</h4>
-            <p>Items Price: ₹{selectedOrder.itemsPrice.toFixed(1)}</p>
-            <p>Shipping: ₹{selectedOrder.shippingPrice.toFixed(1)}</p>
-            <p>Discount: ₹{selectedOrder.discount.toFixed(1)}</p>
-            <p>Total: ₹{selectedOrder.totalPrice.toFixed(1)}</p>
-            <p>Paid: ₹{selectedOrder.amountPaid.toFixed(1)}</p>
-            <p>Due: ₹{selectedOrder.amountDue.toFixed(1)}</p>
+            <h4>💰 Payment Summary</h4>
+            <p>Items: ₹{(Number(detailedOrder.itemsPrice)||0).toFixed(2)}</p>
+            <p>Shipping: ₹{(Number(detailedOrder.shippingPrice)||0).toFixed(2)}</p>
+            <p>Discount: ₹{(Number(detailedOrder.discount)||0).toFixed(2)}</p>
+            <p><b>Total: ₹{(Number(detailedOrder.totalPrice)||0).toFixed(2)}</b></p>
+            <p><b>Paid: ₹{(Number(detailedOrder.amountPaid)||0).toFixed(2)}</b></p>
+            <p>Due: ₹{(Number(detailedOrder.amountDue)||0).toFixed(2)}</p>
 
-            <div className="modal-actions">
-              <button className="btn-download" onClick={() => downloadInvoice(selectedOrder)}>⬇ Download Invoice</button>
-              <button className="btn-close" onClick={closeDetails}>❌ Close</button>
+            <div className="actions-row">
+              <button className="btn" onClick={() => downloadInvoice(detailedOrder)}>📄 Download PDF</button>
+              <button className="btn" onClick={() => sendWhatsApp(detailedOrder, "confirm")}>WhatsApp Confirm</button>
+              <button className="btn" onClick={() => sendWhatsApp(detailedOrder, "status")}>WhatsApp Status</button>
+              <button className="btn" onClick={() => sendWhatsApp(detailedOrder, "cancel")}>WhatsApp Cancel</button>
+              <button className="btn-close" onClick={closeDetails}>Close</button>
             </div>
           </div>
         </div>
