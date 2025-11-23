@@ -109,25 +109,40 @@ export default function AdminOrdersPage() {
   };
 
   // WhatsApp actions: confirm / status / cancel
-  const sendWhatsApp = (order, type) => {
-    const phoneRaw = order?.shippingInfo?.phone || order?.shippingInfo?.mobile || "";
-    const phone = formatPhoneForWhatsApp(phoneRaw);
-    if (!phone) return alert("Customer mobile number missing");
+  const sendWhatsApp = (order, type = "confirm") => {
+  const phoneRaw = order?.shippingInfo?.phone || order?.shippingInfo?.mobile || "";
+  const phone = formatPhoneForWhatsApp(phoneRaw);
+  if (!phone) return alert("Customer mobile number missing");
 
-    let msg = "";
-    const name = cleanText(order?.shippingInfo?.name || order?.user?.name || "Customer");
+  const name = cleanText(order?.shippingInfo?.name || order?.user?.name || "Customer");
+  const orderId = order._id;
+  const trackLink = `https://cuztory.in/track-order?order_id=${orderId}`;
 
-    if (type === "confirm") {
-      msg = `📦 *Order Confirmed*\nHi ${name},\nYour order (${order._id}) has been confirmed.\nTotal: ₹${order.totalPrice}\nThanks for shopping with us!`;
-    } else if (type === "status") {
-      msg = `🔄 *Order Status Update*\nOrder ID: ${order._id}\nStatus: ${order.orderStatus}\nIf you have questions reply to this message.`;
-    } else if (type === "cancel") {
-      msg = `❌ *Order Cancelled*\nHi ${name},\nYour order (${order._id}) has been cancelled. If this is a mistake contact support.`;
+  // Get all item names
+  const itemNames = order.orderItems?.map(item => cleanText(item.name)).join(", ") || "your item";
+
+  let msg = "";
+
+  if (type === "confirm") {
+    msg = `📦 Cuztory – Order Confirmed\n\nHi ${name},\nthanks for your order!\n\nOrder ID: ${orderId}\n\nYour ${itemNames} is confirmed.`;
+
+    // Only include customization line if any item has customization
+    const hasCustomization = order.orderItems?.some(item => item.customization && item.customization.length > 0);
+    if (hasCustomization) {
+      msg += `\nOur team will contact you soon to confirm your customization details.`;
     }
 
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
-    window.open(url, "_blank");
-  };
+    msg += `\nTrack your order here:\n${trackLink}\n\nIf you need any help, feel free to reply to this message at any time! 💬\n\nThank you for choosing Cuztory! 🙂`;
+  } else if (type === "status") {
+    msg = `🔄 *Order Status Update*\nOrder ID: ${orderId}\nStatus: ${order.orderStatus}\nTrack your order: ${trackLink}\nIf you have questions reply to this message.`;
+  } else if (type === "cancel") {
+    msg = `❌ *Order Cancelled*\nHi ${name},\nYour order (${orderId}) has been cancelled. If this is a mistake contact support.\nTrack your order: ${trackLink}`;
+  }
+
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+  window.open(url, "_blank");
+};
+
 
   /**
    * Helper: build clean spec string
