@@ -1,5 +1,3 @@
-// AdminOrdersPage.js (MERGED — full version with Shiprocket, PDF, WhatsApp, customization)
-
 import React, { useEffect, useState } from "react";
 import api from "../utils/axiosInstance";
 import "./AdminOrdersPage.css";
@@ -36,8 +34,17 @@ function formatPhoneForWhatsApp(phone = "") {
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [detailedOrder, setDetailedOrder] = useState(null);
+  
+  // 🆕 New state for Order Editing
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editFormData, setEditFormData] = useState({});
+
+  // 🆕 New state for Bulk Actions
+  const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   // fetch all orders (admin)
   const fetchOrders = async () => {
@@ -75,9 +82,53 @@ export default function AdminOrdersPage() {
   const closeDetails = () => {
     setSelectedOrder(null);
     setDetailedOrder(null);
+    setShowEditModal(false); // Close edit modal too
   };
 
-  // update status
+  // 🆕 HANDLERS FOR ORDER EDITING
+const openEditModal = (order) => {
+    // ⚠️ ONLY initialize shippingInfo based on the backend restriction
+    setEditFormData({
+        shippingInfo: { ...order.shippingInfo },
+    });
+    setShowEditModal(true);
+};
+
+  const handleEditChange = (e) => {
+    const { name, value } = e.target;
+    
+    // Handle nested shippingInfo fields exclusively
+    if (name.startsWith("shippingInfo.")) {
+        const key = name.split(".")[1];
+        setEditFormData((prev) => ({
+            ...prev,
+            shippingInfo: { 
+                ...prev.shippingInfo, 
+                [key]: value 
+            },
+        }));
+    } 
+    // ⚠️ REMOVED ELSE BLOCK: No longer handle top-level pricing fields like itemsPrice, totalPrice.
+};
+
+  const editOrderAdmin = async (e) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      const res = await api.put(`/orders/admin/edit/${detailedOrder._id}`, editFormData);
+      alert("Order updated successfully!");
+      setShowEditModal(false);
+      loadDetailedOrder(detailedOrder._id); // Refresh details
+      fetchOrders(); // Refresh table view
+    } catch (err) {
+      console.error("Error editing order", err);
+      alert("Failed to update order: " + (err.response?.data?.details || err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // update status (Manual update)
   const updateStatus = async (id, status) => {
     try {
       await api.put(`/orders/admin/update/${id}`, { status });
@@ -92,20 +143,25 @@ export default function AdminOrdersPage() {
     }
   };
 
-  // delete order
+  // delete order (NOW BLOCKED on backend, but client-side UI remains the same)
   const deleteOrder = async (id) => {
-    if (!window.confirm("Delete this order?")) return;
+    if (!window.confirm("Attempt to delete this order? (Note: Deletion is often disabled on the server for data integrity.)")) return;
     try {
       await api.delete(`/orders/admin/delete/${id}`);
+      // If the backend blocks the delete, this code won't run, but we catch the error below.
       setOrders((prev) => prev.filter((o) => o._id !== id));
       if (detailedOrder?._id === id) closeDetails();
+      alert("Order deleted successfully!");
     } catch (err) {
       console.error("Error deleting order", err);
-      alert("Delete failed");
+      // The backend now returns a message if deletion is blocked.
+      alert(
+        "Delete failed: " + (err.response?.data?.message || err.message)
+      );
     }
   };
 
-  // WhatsApp actions
+  // WhatsApp actions (Same as before)
   const sendWhatsApp = (order, type = "confirm") => {
     const phoneRaw = order?.shippingInfo?.phone || order?.shippingInfo?.mobile || "";
     const phone = formatPhoneForWhatsApp(phoneRaw);
@@ -137,7 +193,7 @@ export default function AdminOrdersPage() {
     window.open(url, "_blank");
   };
 
-  // specifications and customization helpers
+  // specifications and customization helpers (Same as before)
   const extractSpecifications = (item) => {
     if (!item?.specifications?.length) return "-";
     return item.specifications
@@ -158,8 +214,9 @@ export default function AdminOrdersPage() {
       .join(" | ") || "-";
   };
 
-  // PDF invoice
+  // PDF invoice (Same as before)
   const downloadInvoice = (order) => {
+    // ... (PDF logic remains the same)
     if (!order) return;
     try {
       const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -270,23 +327,123 @@ export default function AdminOrdersPage() {
     }
   };
 
-  // Shiprocket
+  // Shiprocket Create Order (Single)
   const createShiprocketOrder = async (orderId) => {
     try {
       const res = await api.post(`/orders/admin/shiprocket/${orderId}`);
-      alert("Shiprocket order created! AWB: " + res.data.shipData.awb_code);
-      loadDetailedOrder(orderId);
-      fetchOrders();
+      alert(
+        `Shiprocket order created! SR Order ID: ${res.data.shipData.order_id}. AWB: ${
+          res.data.shipData.awb_code || "Not yet assigned"
+        }`
+      );
+      loadDetailedOrder(orderId); // Refresh detailed view
+      fetchOrders(); // Refresh table view
     } catch (err) {
       console.error("Shiprocket creation failed", err);
-      alert("Failed to create Shiprocket order: " + err.response?.data?.message);
+      alert(
+        "Failed to create Shiprocket order: " + (err.response?.data?.message || err.message)
+      );
     }
   };
+
+  // 🆕 Shiprocket Create Order (Bulk)
+  const bulkCreateShiprocketOrders = async () => {
+    if (selectedOrderIds.size === 0) return alert("Select at least one order.");
+    if (!window.confirm(`Create Shiprocket orders for ${selectedOrderIds.size} orders?`)) return;
+
+    setBulkActionLoading(true);
+    try {
+      const orderIds = Array.from(selectedOrderIds);
+      const res = await api.post(`/orders/admin/shiprocket/bulk`, { orderIds });
+      
+      const successCount = res.data.results.filter(r => r.status === 'Success').length;
+      const failCount = res.data.results.filter(r => r.status === 'Failed').length;
+      const skipCount = res.data.results.filter(r => r.status === 'Skipped').length;
+
+      alert(`Bulk creation complete:\n✅ Success: ${successCount}\n⚠️ Skipped: ${skipCount}\n❌ Failed: ${failCount}`);
+      
+      setSelectedOrderIds(new Set()); // Clear selection
+      fetchOrders(); // Refresh table view
+    } catch (err) {
+      console.error("Bulk Shiprocket creation failed", err);
+      alert("Bulk Shiprocket creation failed: " + (err.response?.data?.message || err.message));
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  // Shiprocket Sync Status & Tracking (Same as before)
+  const syncShiprocketStatus = async (orderId) => {
+    if (syncLoading) return;
+    setSyncLoading(true);
+    try {
+      const res = await api.post(`/orders/admin/sync-shiprocket/${orderId}`);
+      alert(res.data.message);
+      loadDetailedOrder(orderId); // Refresh detailed view
+      fetchOrders(); // Refresh table view to show new status
+    } catch (err) {
+      console.error("Shiprocket sync failed", err);
+      alert(
+        "Failed to synchronize with Shiprocket: " + (err.response?.data?.details || err.message)
+      );
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  // 🆕 HANDLERS FOR BULK SELECTION
+  const toggleOrderSelection = (orderId) => {
+    setSelectedOrderIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(orderId)) {
+        newSet.delete(orderId);
+      } else {
+        newSet.add(orderId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedOrderIds.size === orders.length) {
+      setSelectedOrderIds(new Set());
+    } else {
+      const allIds = new Set(orders.map(o => o._id));
+      setSelectedOrderIds(allIds);
+    }
+  };
+
+  // 🆕 Reset Shiprocket Info
+const resetShiprocketData = async (orderId) => {
+    if (!window.confirm("Are you sure you want to clear the Shiprocket data for this order? This allows re-creating the order.")) return;
+
+    try {
+        await api.put(`/orders/admin/shiprocket/reset/${orderId}`);
+        alert("Shiprocket data cleared. Refreshing details...");
+        loadDetailedOrder(orderId); // Refresh detailed view
+        fetchOrders(); // Refresh table view
+    } catch (err) {
+        console.error("Shiprocket reset failed", err);
+        alert(
+            "Failed to reset Shiprocket data: " + (err.response?.data?.message || err.message)
+        );
+    }
+};
 
   // render
   return (
     <div className="admin-orders">
       <h2>📦 All Orders</h2>
+
+      <div className="bulk-actions-bar">
+        <button 
+          onClick={bulkCreateShiprocketOrders} 
+          disabled={selectedOrderIds.size === 0 || bulkActionLoading}
+          className="btn-bulk"
+        >
+          {bulkActionLoading ? 'Processing...' : `🚚 Create Shiprocket for ${selectedOrderIds.size} Orders`}
+        </button>
+      </div>
 
       {loading ? (
         <p>Loading orders...</p>
@@ -294,6 +451,13 @@ export default function AdminOrdersPage() {
         <table className="orders-table">
           <thead>
             <tr>
+              <th>
+                <input 
+                  type="checkbox" 
+                  checked={selectedOrderIds.size > 0 && selectedOrderIds.size === orders.length} 
+                  onChange={toggleSelectAll} 
+                />
+              </th>
               <th>Order ID</th>
               <th>Customer</th>
               <th>Total</th>
@@ -305,7 +469,7 @@ export default function AdminOrdersPage() {
           <tbody>
             {orders.length === 0 ? (
               <tr>
-                <td colSpan="6" style={{ textAlign: "center" }}>
+                <td colSpan="7" style={{ textAlign: "center" }}>
                   No Orders
                 </td>
               </tr>
@@ -313,7 +477,14 @@ export default function AdminOrdersPage() {
               orders.map((order) => {
                 const postal = order.shippingInfo?.postalCode || order.shippingInfo?.pincode || "";
                 return (
-                  <tr key={order._id}>
+                  <tr key={order._id} className={selectedOrderIds.has(order._id) ? 'selected-row' : ''}>
+                    <td>
+                      <input 
+                        type="checkbox" 
+                        checked={selectedOrderIds.has(order._id)} 
+                        onChange={() => toggleOrderSelection(order._id)}
+                      />
+                    </td>
                     <td>{order._id}</td>
                     <td>
                       <div>
@@ -340,6 +511,7 @@ export default function AdminOrdersPage() {
                           "Confirmed",
                           "Packed",
                           "In Transit",
+                          "Arriving Tomorrow",
                           "Out for Delivery",
                           "Delivered",
                           "Failed Delivery",
@@ -369,11 +541,16 @@ export default function AdminOrdersPage() {
         </table>
       )}
 
-      {detailedOrder && (
+      {/* 🆕 Order Details Modal (View/Actions) */}
+      {detailedOrder && !showEditModal && (
         <div className="modal">
           <div className="modal-content-large">
             <h3>🧾 Order Details</h3>
-
+            
+            <button className="btn-edit" onClick={() => openEditModal(detailedOrder)} style={{float: 'right', marginTop: '-40px'}}>
+                ✏️ Edit Order
+            </button>
+            
             <div className="grid2">
               <div>
                 <p>
@@ -403,6 +580,74 @@ export default function AdminOrdersPage() {
                 </p>
               </div>
             </div>
+          
+          {detailedOrder.shiprocketOrderId && (
+    <button 
+        className="btn btn-warning" 
+        onClick={() => resetShiprocketData(detailedOrder._id)}
+        style={{backgroundColor: '#ff9800'}}
+    >
+        🗑️ Reset SR Data
+    </button>
+)}
+
+{!detailedOrder.shiprocketOrderId ? (
+    // Step 1: Create Shiprocket Order
+    <button className="btn btn-shiprocket-create" onClick={() => createShiprocketOrder(detailedOrder._id)}>
+        🚚 Create Shiprocket Order
+    </button>
+) : (
+    // Step 2: Sync Shiprocket Status
+    <button 
+        className="btn btn-shiprocket-sync" 
+        onClick={() => syncShiprocketStatus(detailedOrder._id)}
+        disabled={syncLoading}
+    >
+        🔄 {syncLoading ? 'Syncing...' : 'Sync Shiprocket Status'}
+    </button>
+)}
+
+            {/* 🆕 SHIPROCKET INTEGRATION DETAILS */}
+            <h4>🚚 Shipping & Tracking Status (Shiprocket)</h4>
+            <div className="shiprocket-info-box">
+              <p>
+                <b>SR Order ID:</b>{" "}
+                {detailedOrder.shiprocketOrderId || "Not created"}
+              </p>
+              {detailedOrder.shiprocketAWB && (
+                <p>
+                  <b>AWB Number:</b>{" "}
+                  <a
+                    href={`https://shiprocket.in/tracking/${detailedOrder.shiprocketAWB}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {detailedOrder.shiprocketAWB} ↗️
+                  </a>
+                </p>
+              )}
+              {detailedOrder.shiprocketShipmentId && (
+                <p>
+                  <b>Shipment ID:</b> {detailedOrder.shiprocketShipmentId}
+                </p>
+              )}
+            </div>
+            
+            {/* Display full tracking history if available */}
+            {detailedOrder.fullTrackingHistory && detailedOrder.fullTrackingHistory.track_status === 1 && (
+                <>
+                <h4 style={{marginTop: '15px'}}>📍 Tracking History</h4>
+                <ul className="tracking-list" style={{listStyle: 'none', paddingLeft: '0'}}>
+                    {detailedOrder.fullTrackingHistory.tracking_data?.track_history?.map((event, index) => (
+                        <li key={index} style={{borderLeft: '2px solid #007bff', paddingLeft: '10px', marginBottom: '8px'}}>
+                            <small><b>{event.location}</b> on {event.date}</small>
+                            <p style={{margin: '0', fontSize: '14px'}}>{event.status_description}</p>
+                        </li>
+                    )).reverse() /* Show newest event first */}
+                </ul>
+                </>
+            )}
+
 
             <h4>📍 Shipping Info</h4>
             <p>
@@ -458,12 +703,22 @@ export default function AdminOrdersPage() {
               <button className="btn" onClick={() => sendWhatsApp(detailedOrder, "cancel")}>
                 WhatsApp Cancel
               </button>
-              {!detailedOrder.shiprocketOrderId && (
-                <button className="btn" onClick={() => createShiprocketOrder(detailedOrder._id)}>
+              {!detailedOrder.shiprocketOrderId ? (
+                // Step 1: Create Shiprocket Order
+                <button className="btn btn-shiprocket-create" onClick={() => createShiprocketOrder(detailedOrder._id)}>
                   🚚 Create Shiprocket Order
                 </button>
+              ) : (
+                // Step 2: Sync Shiprocket Status
+                <button 
+                    className="btn btn-shiprocket-sync" 
+                    onClick={() => syncShiprocketStatus(detailedOrder._id)}
+                    disabled={syncLoading}
+                >
+                  🔄 {syncLoading ? 'Syncing...' : 'Sync Shiprocket Status'}
+                </button>
               )}
-              {detailedOrder.shiprocketAWB && <p>📦 AWB: {detailedOrder.shiprocketAWB}</p>}
+              
               <button className="btn-close" onClick={closeDetails}>
                 Close
               </button>
@@ -471,6 +726,66 @@ export default function AdminOrdersPage() {
           </div>
         </div>
       )}
+
+
+{/* 🆕 Order Editing Modal (UPDATED) */}
+{showEditModal && detailedOrder && (
+    <div className="modal">
+        <div className="modal-content-small">
+            <h3>✏️ Edit Shipping Details: {detailedOrder._id}</h3>
+            <form onSubmit={editOrderAdmin}>
+                
+                {/* ⚠️ WARNING: All pricing fields (Items Price, Shipping Price, Discount, Total Price) 
+                  HAVE BEEN REMOVED to align with the backend's current restriction 
+                  (exports.editOrderAdmin only updates shippingInfo). 
+                */}
+                
+                <h4>Shipping Info</h4>
+                <label>
+                    Name:
+                    <input type="text" name="shippingInfo.name" value={editFormData.shippingInfo?.name || ''} onChange={handleEditChange} required />
+                </label>
+                <label>
+                    Phone:
+                    <input type="text" name="shippingInfo.phone" value={editFormData.shippingInfo?.phone || ''} onChange={handleEditChange} required />
+                </label>
+                <label>
+                    Email: {/* 🔑 Added the Email field, crucial for Shiprocket re-creation and contact */}
+                    <input type="email" name="shippingInfo.email" value={editFormData.shippingInfo?.email || ''} onChange={handleEditChange} />
+                </label>
+                <label>
+                    Address:
+                    <input type="text" name="shippingInfo.address" value={editFormData.shippingInfo?.address || ''} onChange={handleEditChange} required />
+                </label>
+                <label>
+                    City: {/* Added City */}
+                    <input type="text" name="shippingInfo.city" value={editFormData.shippingInfo?.city || ''} onChange={handleEditChange} required />
+                </label>
+                <label>
+                    State: {/* Added State */}
+                    <input type="text" name="shippingInfo.state" value={editFormData.shippingInfo?.state || ''} onChange={handleEditChange} required />
+                </label>
+                <label>
+                    Pincode:
+                    <input type="text" name="shippingInfo.postalCode" value={editFormData.shippingInfo?.postalCode || ''} onChange={handleEditChange} required />
+                </label>
+                <label>
+                    Country: {/* Added Country */}
+                    <input type="text" name="shippingInfo.country" value={editFormData.shippingInfo?.country || ''} onChange={handleEditChange} required />
+                </label>
+
+                <div className="actions-row" style={{marginTop: '20px'}}>
+                    <button type="submit" className="btn" disabled={loading}>
+                        {loading ? 'Saving...' : 'Save Shipping Changes'}
+                    </button>
+                    <button type="button" className="btn-close" onClick={closeDetails}>
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+)}
     </div>
   );
 }
