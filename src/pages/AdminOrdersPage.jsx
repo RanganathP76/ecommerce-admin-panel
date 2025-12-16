@@ -38,6 +38,13 @@ export default function AdminOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [detailedOrder, setDetailedOrder] = useState(null);
   
+  // 🆕 New state for Date Filtering
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  // 🆕 New state for Status Filtering
+  const [statusFilter, setStatusFilter] = useState("All"); 
+  const [filteredOrders, setFilteredOrders] = useState([]); // Use this for display
+  
   // 🆕 New state for Order Editing
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFormData, setEditFormData] = useState({});
@@ -45,13 +52,30 @@ export default function AdminOrdersPage() {
   // 🆕 New state for Bulk Actions
   const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  
+  const ALL_STATUSES = [
+      "Pending",
+      "Processing",
+      "Confirmed",
+      "Packed",
+      "In Transit",
+      "Arriving Tomorrow",
+      "Out for Delivery",
+      "Delivered",
+      "Failed Delivery",
+      "Cancelled",
+      "Returned",
+  ];
 
   // fetch all orders (admin)
   const fetchOrders = async () => {
     try {
       setLoading(true);
       const res = await api.get("/orders/admin/all");
-      setOrders(res.data || []);
+      const fetchedOrders = res.data || [];
+      setOrders(fetchedOrders);
+      // 🆕 Apply initial filter
+      applyFilters(fetchedOrders, startDate, endDate, statusFilter);
     } catch (err) {
       console.error("Error fetching orders", err);
     } finally {
@@ -62,6 +86,60 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     fetchOrders();
   }, []);
+
+  // 🆕 Helper function to apply ALL filters
+  const applyFilters = (allOrders, start, end, status) => {
+    let result = allOrders;
+
+    // 1. Date Filter Logic
+    const startFilter = start ? new Date(start) : null;
+    const endFilter = end ? new Date(end) : null;
+
+    if (startFilter || endFilter) {
+      result = result.filter(order => {
+        const orderDate = new Date(order.createdAt);
+        // Set time to start/end of day for accurate filtering
+        if (startFilter) startFilter.setHours(0, 0, 0, 0);
+        if (endFilter) endFilter.setHours(23, 59, 59, 999);
+
+        const afterStart = startFilter ? orderDate >= startFilter : true;
+        const beforeEnd = endFilter ? orderDate <= endFilter : true;
+        return afterStart && beforeEnd;
+      });
+    }
+
+    // 2. Status Filter Logic
+    if (status && status !== "All") {
+        result = result.filter(order => order.orderStatus === status);
+    }
+
+    setFilteredOrders(result);
+  };
+  
+  // 🆕 Handler for date filter change
+  const handleDateFilterChange = (e) => {
+    const { name, value } = e.target;
+    let newStart = startDate;
+    let newEnd = endDate;
+    
+    if (name === 'startDate') {
+        setStartDate(value);
+        newStart = value;
+    } else if (name === 'endDate') {
+        setEndDate(value);
+        newEnd = value;
+    }
+    
+    // Re-apply filter on change
+    applyFilters(orders, newStart, newEnd, statusFilter);
+  };
+
+  // 🆕 Handler for status filter change
+  const handleStatusFilterChange = (e) => {
+    const newStatus = e.target.value;
+    setStatusFilter(newStatus);
+    applyFilters(orders, startDate, endDate, newStatus);
+  };
 
   // fetch single order
   const loadDetailedOrder = async (id) => {
@@ -108,7 +186,6 @@ const openEditModal = (order) => {
             },
         }));
     } 
-    // ⚠️ REMOVED ELSE BLOCK: No longer handle top-level pricing fields like itemsPrice, totalPrice.
 };
 
   const editOrderAdmin = async (e) => {
@@ -430,10 +507,78 @@ const resetShiprocketData = async (orderId) => {
     }
 };
 
+/**
+ * Helper: Returns a styled tag for payment status
+ * * 1. PAID (due <= 0) -> Dark Green
+ * 2. ADVANCED (paid > 0 AND due > 0) -> Light Green
+ * 3. COD/PENDING (paid === 0) -> Yellow
+ */
+const getPaymentTag = (order) => {
+    const amountPaid = Number(order.amountPaid || 0);
+    const amountDue = Number(order.amountDue || 0);
+    
+    // 1. PAID (due <= 0) - Dark Green
+    if (amountDue <= 0) {
+        return <span className="payment-tag paid">PAID</span>;
+    } 
+    
+    // 2. ADVANCED (paid > 0 AND due > 0) - Light Green
+    if (amountPaid > 0 && amountDue > 0) {
+        return <span className="payment-tag advanced">ADVANCED</span>;
+    } 
+    
+    // 3. COD/PENDING (paid === 0) - Yellow
+    if (amountPaid === 0) {
+        // Use paymentMethod for better label if available, otherwise PENDING
+        return <span className="payment-tag cod">{order.paymentMethod === 'COD' ? 'COD' : 'PENDING'}</span>;
+    }
+
+    // Fallback (e.g., partial payment, no method defined)
+    return <span className="payment-tag pending-payment">PENDING PAYMENT</span>;
+};
+
   // render
   return (
     <div className="admin-orders">
       <h2>📦 All Orders</h2>
+
+      {/* 🆕 Date and Status Filter Bar */}
+      <div className="filter-bar" style={{marginBottom: '15px', padding: '10px', border: '1px solid #ccc', borderRadius: '5px', display: 'flex', gap: '20px', alignItems: 'center'}}>
+        <label>
+            Start Date:
+            <input 
+                type="date" 
+                name="startDate" 
+                value={startDate} 
+                onChange={handleDateFilterChange} 
+                style={{marginLeft: '10px', padding: '5px'}}
+            />
+        </label>
+        <label>
+            End Date:
+            <input 
+                type="date" 
+                name="endDate" 
+                value={endDate} 
+                onChange={handleDateFilterChange} 
+                style={{marginLeft: '10px', padding: '5px'}}
+            />
+        </label>
+        {/* 🆕 Status Filter */}
+        <label>
+            Status:
+            <select
+                value={statusFilter}
+                onChange={handleStatusFilterChange}
+                style={{marginLeft: '10px', padding: '5px'}}
+            >
+                <option value="All">All Statuses</option>
+                {ALL_STATUSES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                ))}
+            </select>
+        </label>
+      </div>
 
       <div className="bulk-actions-bar">
         <button 
@@ -445,6 +590,34 @@ const resetShiprocketData = async (orderId) => {
         </button>
       </div>
 
+      <div className="bulk-actions-bar">
+
+  {/* 🆕 GLOBAL SHIPROCKET SYNC BUTTON */}
+  <button
+    onClick={async () => {
+      if (!window.confirm("Sync ALL Shiprocket orders? This may take 30–60 seconds.")) return;
+      try {
+        setSyncLoading(true);
+        const res = await api.post("/orders/admin/sync-shiprocket-all");
+        alert(
+          `Global Sync Completed:\nUpdated: ${res.data.updated}\nSkipped: ${res.data.skipped}\nFailed: ${res.data.failed}`
+        );
+        fetchOrders(); // Refresh table
+      } catch (err) {
+        alert("Global sync failed: " + (err.response?.data?.message || err.message));
+      } finally {
+        setSyncLoading(false);
+      }
+    }}
+    className="btn-bulk"
+    disabled={syncLoading}
+  >
+    {syncLoading ? "Syncing All..." : "🔄 Sync ALL Shiprocket Orders"}
+  </button>
+
+</div>
+
+
       {loading ? (
         <p>Loading orders...</p>
       ) : (
@@ -454,30 +627,58 @@ const resetShiprocketData = async (orderId) => {
               <th>
                 <input 
                   type="checkbox" 
-                  checked={selectedOrderIds.size > 0 && selectedOrderIds.size === orders.length} 
+                  checked={selectedOrderIds.size > 0 && selectedOrderIds.size === filteredOrders.length} 
                   onChange={toggleSelectAll} 
                 />
               </th>
               <th>Order ID</th>
               <th>Customer</th>
               <th>Total</th>
+              
               <th>Status</th>
               <th>Placed</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {orders.length === 0 ? (
+            {filteredOrders.length === 0 ? (
               <tr>
                 <td colSpan="7" style={{ textAlign: "center" }}>
-                  No Orders
+                  No Orders Found
                 </td>
               </tr>
             ) : (
-              orders.map((order) => {
+              filteredOrders.map((order) => {
                 const postal = order.shippingInfo?.postalCode || order.shippingInfo?.pincode || "";
+                
+                // Determine available status options based on current status
+                let allowedStatuses = ALL_STATUSES;
+                if (order.orderStatus === "Delivered") {
+                    allowedStatuses = ["Delivered", "Returned"]; // Can only change to Returned
+                } else if (order.orderStatus === "Returned" || order.orderStatus === "Cancelled" || order.orderStatus === "Failed Delivery") { 
+                    // Cannot change status if Returned, Cancelled or Failed Delivery
+                    allowedStatuses = [order.orderStatus]; 
+                }
+                
+                // 🆕 Logic for Row Highlighting (UPDATED for 'Returned')
+                let rowClass = '';
+                const hasShiprocketStatus = (order.shiprocketAWB && order.fullTrackingHistory?.shipment_track?.[0]?.current_status);
+                
+                if (order.orderStatus === "Delivered") {
+                    rowClass = 'delivered-row'; // Light Green
+                } else if (order.orderStatus === "Cancelled" || order.orderStatus === "Failed Delivery" || order.orderStatus === "Returned") {
+                    // 🚨 Added "Returned" here
+                    rowClass = 'failed-or-cancelled-row'; // Light Red
+                } else if (hasShiprocketStatus) {
+                    // If it has AWB/SR Status, and is not one of the terminal statuses above
+                    rowClass = 'in-transit-row'; // Light Blue
+                }
+                
                 return (
-                  <tr key={order._id} className={selectedOrderIds.has(order._id) ? 'selected-row' : ''}>
+                  <tr 
+                    key={order._id} 
+                    className={`${selectedOrderIds.has(order._id) ? 'selected-row' : ''} ${rowClass}`} // CORRECTED CLASS ASSIGNMENT
+                  >
                     <td>
                       <input 
                         type="checkbox" 
@@ -486,6 +687,7 @@ const resetShiprocketData = async (orderId) => {
                       />
                     </td>
                     <td>{order._id}</td>
+                    
                     <td>
                       <div>
                         <strong>{order.user?.name || order.shippingInfo?.name || "Guest"}</strong>
@@ -497,6 +699,10 @@ const resetShiprocketData = async (orderId) => {
                         📞 {order.shippingInfo?.phone || "N/A"}
                       </div>
                       <div style={{ fontSize: 12, color: "#666" }}>📮 {postal || "N/A"}</div>
+                      {/* 🆕 Payment Tag Display */}
+                      <div style={{ fontSize: 12, marginTop: 5 }}>
+                          {getPaymentTag(order)}
+                      </div>
                     </td>
                     <td>₹{(Number(order.totalPrice) || 0).toFixed(2)}</td>
                     <td>
@@ -505,24 +711,21 @@ const resetShiprocketData = async (orderId) => {
                         onChange={(e) => updateStatus(order._id, e.target.value)}
                         className="status-select"
                       >
-                        {[
-                          "Pending",
-                          "Processing",
-                          "Confirmed",
-                          "Packed",
-                          "In Transit",
-                          "Arriving Tomorrow",
-                          "Out for Delivery",
-                          "Delivered",
-                          "Failed Delivery",
-                          "Cancelled",
-                          "Returned",
-                        ].map((s) => (
+                        {allowedStatuses.map((s) => (
                           <option key={s} value={s}>
                             {s}
                           </option>
                         ))}
                       </select>
+
+                    <div style={{ fontSize: "12px", marginBottom: "5px" }}>
+                        <b>SR Status:</b>{" "}
+                        {order.fullTrackingHistory?.shipment_track?.[0]?.current_status || "—"}
+                    </div>
+                    <div style={{ fontSize: "12px", marginBottom: "5px" }}>
+                        <b>AWB:</b> {order.shiprocketAWB || "Not Assigned"}
+                    </div>
+
                     </td>
                     <td>{new Date(order.createdAt).toLocaleString()}</td>
                     <td>
@@ -532,6 +735,7 @@ const resetShiprocketData = async (orderId) => {
                       <button className="btn-delete" onClick={() => deleteOrder(order._id)}>
                         🗑 Delete
                       </button>
+                      
                     </td>
                   </tr>
                 );
@@ -689,6 +893,11 @@ const resetShiprocketData = async (orderId) => {
               <b>Paid: ₹{(Number(detailedOrder.amountPaid) || 0).toFixed(2)}</b>
             </p>
             <p>Due: ₹{(Number(detailedOrder.amountDue) || 0).toFixed(2)}</p>
+             {/* 🆕 Payment Tag Display in Detail View */}
+            <p style={{marginTop: '10px'}}>
+                Payment Status: {getPaymentTag(detailedOrder)}
+            </p>
+
 
             <div className="actions-row">
               <button className="btn" onClick={() => downloadInvoice(detailedOrder)}>
