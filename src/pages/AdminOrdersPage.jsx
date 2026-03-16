@@ -35,7 +35,7 @@ export default function AdminOrdersPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [, setSelectedOrder] = useState(null);
   const [detailedOrder, setDetailedOrder] = useState(null);
   
   // 🆕 New state for Date Filtering
@@ -89,6 +89,7 @@ export default function AdminOrdersPage() {
 
   useEffect(() => {
     fetchOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 🆕 Helper function to apply ALL filters
