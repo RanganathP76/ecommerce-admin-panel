@@ -54,6 +54,7 @@ export default function AdminOrdersPage() {
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   
   const ALL_STATUSES = [
+      "Abandoned",
       "Pending",
       "Processing",
       "Confirmed",
@@ -66,6 +67,9 @@ export default function AdminOrdersPage() {
       "Cancelled",
       "Returned",
   ];
+
+  
+
 
   // fetch all orders (admin)
   const fetchOrders = async () => {
@@ -109,7 +113,11 @@ export default function AdminOrdersPage() {
     }
 
     // 2. Status Filter Logic
-    if (status && status !== "All") {
+    if (status === "All") {
+        // This line hides Abandoned orders from the main list by default
+        result = result.filter(order => order.orderStatus !== "Abandoned");
+    } else {
+        // This shows ONLY the status you selected (including Abandoned if you pick it)
         result = result.filter(order => order.orderStatus === status);
     }
 
@@ -207,6 +215,20 @@ const openEditModal = (order) => {
 
   // update status (Manual update)
   const updateStatus = async (id, status) => {
+    const orderToUpdate = orders.find(o => o._id === id);
+
+  // If the order is already Abandoned, stop the update
+  if (orderToUpdate && orderToUpdate.orderStatus === "Abandoned") {
+    alert("Abandoned checkout status cannot be changed.");
+    return;
+  }
+
+  // 1. Block changing TO abandoned
+  if (status === "Abandoned") {
+    alert("You cannot manually change a regular order to Abandoned status.");
+    return;
+  }
+
     try {
       await api.put(`/orders/admin/update/${id}`, { status });
       setOrders((prev) =>
@@ -707,16 +729,28 @@ const getPaymentTag = (order) => {
                     <td>₹{(Number(order.totalPrice) || 0).toFixed(2)}</td>
                     <td>
                       <select
-                        value={order.orderStatus}
-                        onChange={(e) => updateStatus(order._id, e.target.value)}
-                        className="status-select"
-                      >
-                        {allowedStatuses.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
+  value={order.orderStatus}
+  onChange={(e) => updateStatus(order._id, e.target.value)}
+  // 1. Lock the dropdown completely if the order is already Abandoned
+  disabled={order.orderStatus === "Abandoned"}
+  className={order.orderStatus === "Abandoned" ? "disabled-select" : ""}
+>
+  {allowedStatuses.map((s) => {
+    // 2. Hide the "Abandoned" option from the list if the order is a real order
+    // This prevents you from accidentally changing a Pending/Processing order to Abandoned
+    if (order.orderStatus !== "Abandoned" && s === "Abandoned") {
+      return null;
+    }
+
+    return (
+      <option key={s} value={s}>
+        {s}
+      </option>
+    );
+  })}
+</select>
+
+                      
 
                     <div style={{ fontSize: "12px", marginBottom: "5px" }}>
                         <b>SR Status:</b>{" "}
