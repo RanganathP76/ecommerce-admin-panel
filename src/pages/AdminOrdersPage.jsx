@@ -201,7 +201,7 @@ const openEditModal = (order) => {
     e.preventDefault();
     try {
       setLoading(true);
-      const res = await api.put(`/orders/admin/edit/${detailedOrder._id}`, editFormData);
+      await api.put(`/orders/admin/edit/${detailedOrder._id}`, editFormData);
       alert("Order updated successfully!");
       setShowEditModal(false);
       loadDetailedOrder(detailedOrder._id); // Refresh details
