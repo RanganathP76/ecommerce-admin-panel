@@ -195,7 +195,7 @@ export default function AdminProductPage() {
   const updateSpecValue = (specIndex, valIndex, key, value) =>
     setFormData((prev) => {
       const updated = [...prev.specifications];
-      updated[specIndex].values[valIndex][key] = key === "stock" ? Number(value) : value;
+      updated[specIndex].values[valIndex][key] = (key === "stock" || key === "extraPrice") ? Number(value) : value;
       return { ...prev, specifications: updated };
     });
   const removeSpecValue = (specIndex, valIndex) =>
@@ -583,6 +583,16 @@ formData.description.forEach((d) => {
                   <div key={j} className="spec-value">
                     <input type="text" placeholder="Value" value={val.value} onChange={(e) => updateSpecValue(i, j, "value", e.target.value)} />
                     <input type="number" placeholder="Stock" value={val.stock} onChange={(e) => updateSpecValue(i, j, "stock", e.target.value)} />
+                    <input type="number" placeholder="+ Extra Price" value={val.extraPrice} onChange={(e) => updateSpecValue(i, j, "extraPrice", e.target.value)} />
+                    <select 
+      value={val.linkedImage} 
+      onChange={(e) => updateSpecValue(i, j, "linkedImage", e.target.value)}
+    >
+      <option value="">No Linked Image</option>
+      {formData.existingImages.map((img, imgIdx) => (
+        <option key={imgIdx} value={img}>Image {imgIdx + 1}</option>
+      ))}
+    </select>
                     <button type="button" onClick={() => removeSpecValue(i, j)}>X</button>
                   </div>
                 ))}
