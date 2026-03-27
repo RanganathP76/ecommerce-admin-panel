@@ -654,6 +654,7 @@ const getPaymentTag = (order) => {
                   onChange={toggleSelectAll} 
                 />
               </th>
+              <th>Sl No.</th>
               <th>Order ID</th>
               <th>Customer</th>
               <th>Total</th>
@@ -669,9 +670,10 @@ const getPaymentTag = (order) => {
                 <td colSpan="7" style={{ textAlign: "center" }}>
                   No Orders Found
                 </td>
+                
               </tr>
             ) : (
-              filteredOrders.map((order) => {
+              filteredOrders.map((order, index) => {
                 const postal = order.shippingInfo?.postalCode || order.shippingInfo?.pincode || "";
                 
                 // Determine available status options based on current status
@@ -698,10 +700,13 @@ const getPaymentTag = (order) => {
                 }
                 
                 return (
+                  
                   <tr 
                     key={order._id} 
                     className={`${selectedOrderIds.has(order._id) ? 'selected-row' : ''} ${rowClass}`} // CORRECTED CLASS ASSIGNMENT
                   >
+                    
+                    
                     <td>
                       <input 
                         type="checkbox" 
@@ -709,6 +714,8 @@ const getPaymentTag = (order) => {
                         onChange={() => toggleOrderSelection(order._id)}
                       />
                     </td>
+                    <td style={{ fontWeight: 'bold' }}>{index + 1}</td>
+
                     <td>{order._id}</td>
                     
                     <td>
