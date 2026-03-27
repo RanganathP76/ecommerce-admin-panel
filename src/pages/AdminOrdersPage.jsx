@@ -427,6 +427,41 @@ const openEditModal = (order) => {
     }
   };
 
+  const downloadExcelDetails = () => {
+    if (selectedOrderIds.size === 0) {
+        alert("Please select at least one order.");
+        return;
+    }
+
+    // Filter selected orders from the main list
+    const selectedData = orders.filter(order => selectedOrderIds.has(order._id));
+
+    // Define CSV Headers
+    let csvContent = "Order ID,Customer,Status,Product,Specifications,Customizations\n";
+
+    selectedData.forEach(order => {
+        order.orderItems.forEach(item => {
+            // Use your existing helper functions to clean text
+            const specs = extractSpecifications(item).replace(/,/g, ";"); // Replace commas to avoid CSV breaks
+            const custom = extractCustomization(item).replace(/,/g, ";");
+            const customerName = order.user?.name || order.shippingInfo?.name || "Guest";
+
+            csvContent += `${order._id},${customerName},${order.orderStatus},${item.name},${specs},${custom}\n`;
+        });
+    });
+
+    // Create and download the file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Order_Details_${new Date().toLocaleDateString()}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
   // Shiprocket Create Order (Single)
   const createShiprocketOrder = async (orderId) => {
     try {
@@ -504,14 +539,20 @@ const openEditModal = (order) => {
     });
   };
 
-  const toggleSelectAll = () => {
-    if (selectedOrderIds.size === orders.length) {
-      setSelectedOrderIds(new Set());
+  // Locate this function in your code
+const toggleSelectAll = () => {
+    if (selectedOrderIds.size === filteredOrders.length) {
+        // If all are selected, clear selection
+        setSelectedOrderIds(new Set());
     } else {
-      const allIds = new Set(orders.map(o => o._id));
-      setSelectedOrderIds(allIds);
+        // Filter out "Abandoned" orders before selecting all
+        const validOrderIds = filteredOrders
+            .filter(order => order.orderStatus !== "Abandoned")
+            .map(order => order._id);
+            
+        setSelectedOrderIds(new Set(validOrderIds));
     }
-  };
+};
 
   // 🆕 Reset Shiprocket Info
 const resetShiprocketData = async (orderId) => {
@@ -602,6 +643,19 @@ const getPaymentTag = (order) => {
             </select>
         </label>
       </div>
+
+        <div className="bulk-actions-bar">
+
+    {/* New Download Button */}
+    <button 
+        onClick={downloadExcelDetails} 
+        disabled={selectedOrderIds.size === 0}
+        className="btn"
+        style={{ backgroundColor: '#28a745', marginLeft: '10px' }}
+    >
+        Download Specs (Excel)
+    </button>
+</div>
 
       <div className="bulk-actions-bar">
         <button 
