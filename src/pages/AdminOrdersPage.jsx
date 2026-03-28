@@ -316,7 +316,7 @@ const openEditModal = (order) => {
         (item) => item.customization && item.customization.length > 0
       );
       if (hasCustomization)
-        msg += `\nOur team will contact you soon to confirm customization details.`;
+        msg += ``;
     } else if (type === "status") {
       msg = `🔄 Order Status Update\nOrder ID: ${orderId}\nStatus: ${order.orderStatus}\nTrack: ${trackLink}`;
     } else if (type === "cancel") {
