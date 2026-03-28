@@ -37,6 +37,8 @@ export default function AdminOrdersPage() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [, setSelectedOrder] = useState(null);
   const [detailedOrder, setDetailedOrder] = useState(null);
+  // 🆕 New state for Universal Search
+const [searchQuery, setSearchQuery] = useState("");
   
   // 🆕 New state for Date Filtering
   const [startDate, setStartDate] = useState("");
@@ -93,37 +95,69 @@ export default function AdminOrdersPage() {
   }, []);
 
   // 🆕 Helper function to apply ALL filters
-  const applyFilters = (allOrders, start, end, status) => {
-    let result = allOrders;
+  const applyFilters = (allOrders, start, end, status, query) => {
+  let result = allOrders;
 
-    // 1. Date Filter Logic
-    const startFilter = start ? new Date(start) : null;
-    const endFilter = end ? new Date(end) : null;
+  // 1. Date Filter Logic
+  const startFilter = start ? new Date(start) : null;
+  const endFilter = end ? new Date(end) : null;
 
-    if (startFilter || endFilter) {
-      result = result.filter(order => {
-        const orderDate = new Date(order.createdAt);
-        // Set time to start/end of day for accurate filtering
-        if (startFilter) startFilter.setHours(0, 0, 0, 0);
-        if (endFilter) endFilter.setHours(23, 59, 59, 999);
+  if (startFilter || endFilter) {
+    result = result.filter(order => {
+      const orderDate = new Date(order.createdAt);
+      if (startFilter) startFilter.setHours(0, 0, 0, 0);
+      if (endFilter) endFilter.setHours(23, 59, 59, 999);
 
-        const afterStart = startFilter ? orderDate >= startFilter : true;
-        const beforeEnd = endFilter ? orderDate <= endFilter : true;
-        return afterStart && beforeEnd;
+      const afterStart = startFilter ? orderDate >= startFilter : true;
+      const beforeEnd = endFilter ? orderDate <= endFilter : true;
+      return afterStart && beforeEnd;
+    });
+  }
+
+  // 2. Status Filter Logic
+  if (status === "All") {
+      result = result.filter(order => order.orderStatus !== "Abandoned");
+  } else {
+      result = result.filter(order => order.orderStatus === status);
+  }
+
+  // 3. 🆕 Universal Search Logic
+  if (query && query.trim() !== "") {
+    const lowQuery = query.toLowerCase();
+    
+    result = result.filter(order => {
+      // Check Order ID & Basic Info
+      const matchBasic = 
+        order._id.toLowerCase().includes(lowQuery) ||
+        (order.user?.name || "").toLowerCase().includes(lowQuery) ||
+        (order.user?.email || "").toLowerCase().includes(lowQuery) ||
+        (order.shippingInfo?.phone || "").toLowerCase().includes(lowQuery) ||
+        (order.shippingInfo?.name || "").toLowerCase().includes(lowQuery) ||
+        (order.shippingInfo?.address || "").toLowerCase().includes(lowQuery);
+
+      // Check nested items (Names, Specs, and Customizations)
+      const matchItems = order.orderItems?.some(item => {
+        const nameMatch = item.name.toLowerCase().includes(lowQuery);
+        
+        const specMatch = item.specifications?.some(s => 
+          s.key.toLowerCase().includes(lowQuery) || 
+          s.value.toLowerCase().includes(lowQuery)
+        );
+
+        const customMatch = item.customization?.some(c => 
+          (c.label || "").toLowerCase().includes(lowQuery) || 
+          (String(c.value || "")).toLowerCase().includes(lowQuery)
+        );
+
+        return nameMatch || specMatch || customMatch;
       });
-    }
 
-    // 2. Status Filter Logic
-    if (status === "All") {
-        // This line hides Abandoned orders from the main list by default
-        result = result.filter(order => order.orderStatus !== "Abandoned");
-    } else {
-        // This shows ONLY the status you selected (including Abandoned if you pick it)
-        result = result.filter(order => order.orderStatus === status);
-    }
+      return matchBasic || matchItems;
+    });
+  }
 
-    setFilteredOrders(result);
-  };
+  setFilteredOrders(result);
+};
   
   // 🆕 Handler for date filter change
   const handleDateFilterChange = (e) => {
@@ -642,6 +676,22 @@ const getPaymentTag = (order) => {
                 ))}
             </select>
         </label>
+
+      {/* Universal Search Input */}
+  <label style={{ flex: '1', minWidth: '250px' }}>
+      Search Orders:
+      <input 
+          type="text" 
+          placeholder="Search Name, ID, Phone, or Customization..." 
+          value={searchQuery}
+          onChange={(e) => {
+              setSearchQuery(e.target.value);
+              applyFilters(orders, startDate, endDate, statusFilter, e.target.value);
+          }}
+          style={{ marginLeft: '10px', padding: '5px', width: '80%' }}
+      />
+  </label>
+
       </div>
 
         <div className="bulk-actions-bar">
