@@ -820,7 +820,15 @@ const getPaymentTag = (order) => {
                     </td>
                     <td style={{ fontWeight: 'bold' }}>{index + 1}</td>
 
-                    <td>{order._id}</td>
+                    <td>
+  <div className="order-id-container">
+    {order._id}
+    {/* Only show the dot if shiprocketOrderId exists */}
+    {order.shiprocketOrderId && (
+      <span className="sr-dot" title="Shiprocket Order Created"></span>
+    )}
+  </div>
+</td>
                     
                     <td>
                       <div>

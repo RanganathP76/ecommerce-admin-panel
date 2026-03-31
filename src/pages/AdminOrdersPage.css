@@ -485,3 +485,20 @@
 .orders-table tbody .selected-row.in-transit-row {
     background-color: #d1efff; 
 }
+
+/* The container for the Order ID and the dot */
+.order-id-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The orange dot style */
+.sr-dot {
+  height: 10px;
+  width: 10px;
+  background-color: #ff9800; /* Orange */
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 5px rgba(255, 152, 0, 0.5);
+}
