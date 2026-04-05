@@ -131,6 +131,7 @@ const [searchQuery, setSearchQuery] = useState("");
         order._id.toLowerCase().includes(lowQuery) ||
         (order.user?.name || "").toLowerCase().includes(lowQuery) ||
         (order.user?.email || "").toLowerCase().includes(lowQuery) ||
+        (order.paymentInfo?.id || "").toLowerCase().includes(lowQuery) ||
         (order.shippingInfo?.phone || "").toLowerCase().includes(lowQuery) ||
         (order.shippingInfo?.name || "").toLowerCase().includes(lowQuery) ||
         (order.shippingInfo?.address || "").toLowerCase().includes(lowQuery);
@@ -1037,6 +1038,18 @@ const getPaymentTag = (order) => {
             </ul>
 
             <h4>💰 Payment Summary</h4>
+            
+            {/* 🆕 Add this block */}
+{detailedOrder.paymentInfo?.id && (
+  <p>
+    <b>Razorpay Payment ID:</b> <code style={{background: "#eee", padding: "2px 4px"}}>{detailedOrder.paymentInfo.id}</code>
+  </p>
+)}
+{detailedOrder.paymentInfo?.method && (
+  <p><b>Method:</b> {detailedOrder.paymentInfo.method}</p>
+)}
+
+
             <p>Items: ₹{(Number(detailedOrder.itemsPrice) || 0).toFixed(2)}</p>
             <p>Shipping: ₹{(Number(detailedOrder.shippingPrice) || 0).toFixed(2)}</p>
             <p>Discount: ₹{(Number(detailedOrder.discount) || 0).toFixed(2)}</p>
