@@ -35,7 +35,7 @@ export default function Analytics() {
 
   return (
     <div className="analytics-container">
-      <h1>Analytics Dashboard</h1>
+      <h1>Analytics new Dashboard</h1>
 
       {/* Summary Cards */}
       <div className="summary-cards">
