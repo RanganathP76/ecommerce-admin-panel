@@ -1,0 +1,221 @@
+/* ==========================================================
+   ABANDONED CHECKOUTS PAGE
+   ========================================================== */
+
+.abandoned-page {
+    padding: 30px;
+    background: #f7f8fc;
+    min-height: 100vh;
+}
+
+.abandoned-page h1 {
+    margin: 0 0 25px;
+    font-size: 30px;
+    font-weight: 700;
+    color: #222;
+}
+
+/* =========================
+   TABLE
+========================= */
+
+.abandoned-page table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 30px rgba(0,0,0,.05);
+}
+
+.abandoned-page thead {
+    background: #111;
+    color: white;
+}
+
+.abandoned-page th {
+    padding: 18px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 15px;
+}
+
+.abandoned-page td {
+    padding: 18px;
+    border-bottom: 1px solid #ececec;
+    vertical-align: top;
+}
+
+.abandoned-page tbody tr:hover {
+    background: #fafafa;
+}
+
+/* =========================
+   VIEW BUTTON
+========================= */
+
+.abandoned-page .view-btn {
+    background: #111;
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: .25s;
+    font-size: 14px;
+}
+
+.abandoned-page .view-btn:hover {
+    background: #333;
+}
+
+/* =========================
+   MODAL
+========================= */
+
+.abandoned-page .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.55);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.abandoned-page .checkout-modal {
+    width: 950px;
+    max-width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+    background: white;
+    border-radius: 15px;
+    padding: 30px;
+    box-shadow: 0 15px 40px rgba(0,0,0,.2);
+}
+
+.abandoned-page .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+}
+
+.abandoned-page .modal-header h2 {
+    margin: 0;
+}
+
+.abandoned-page .close-btn {
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: #e53935;
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.abandoned-page .close-btn:hover {
+    background: #c62828;
+}
+
+/* =========================
+   SECTION
+========================= */
+
+.abandoned-page h3 {
+    margin-top: 30px;
+    margin-bottom: 15px;
+    color: #222;
+}
+
+.abandoned-page hr {
+    margin: 30px 0;
+    border: none;
+    border-top: 1px solid #eee;
+}
+
+.abandoned-page p {
+    margin: 8px 0;
+    color: #444;
+}
+
+/* =========================
+   PRODUCT CARD
+========================= */
+
+.abandoned-page .product-card {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+    padding: 18px;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    background: #fafafa;
+}
+
+.abandoned-page .product-card img {
+    width: 110px;
+    height: 110px;
+    object-fit: cover;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+}
+
+.abandoned-page .product-card h4 {
+    margin: 0 0 10px;
+    color: #111;
+}
+
+.abandoned-page .product-card strong {
+    color: #111;
+}
+
+/* =========================
+   SCROLLBAR
+========================= */
+
+.abandoned-page .checkout-modal::-webkit-scrollbar {
+    width: 8px;
+}
+
+.abandoned-page .checkout-modal::-webkit-scrollbar-thumb {
+    background: #bbb;
+    border-radius: 20px;
+}
+
+.abandoned-page .checkout-modal::-webkit-scrollbar-track {
+    background: #eee;
+}
+
+/* =========================
+   MOBILE
+========================= */
+
+@media(max-width:900px){
+
+.abandoned-page{
+    padding:15px;
+}
+
+.abandoned-page table{
+    display:block;
+    overflow-x:auto;
+}
+
+.abandoned-page .checkout-modal{
+    width:95%;
+    padding:20px;
+}
+
+.abandoned-page .product-card{
+    flex-direction:column;
+}
+
+.abandoned-page .product-card img{
+    width:100%;
+    height:220px;
+}
+
+}

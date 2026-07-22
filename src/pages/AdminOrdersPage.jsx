@@ -56,8 +56,7 @@ const [searchQuery, setSearchQuery] = useState("");
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   
   const ALL_STATUSES = [
-      "Abandoned",
-      "Pending",
+      
       "Processing",
       "Confirmed",
       "Packed",

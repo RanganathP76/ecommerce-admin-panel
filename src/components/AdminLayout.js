@@ -8,7 +8,8 @@ import {
   FaCog,
   FaTags,
   FaImages,
-  FaSignOutAlt
+  FaSignOutAlt,
+  FaShoppingCart       // ← Add this
 } from "react-icons/fa";
 import "./AdminLayout.css";
 
@@ -30,6 +31,9 @@ export default function AdminLayout() {
           <Link to="/banners"><FaImages /> Banners</Link> {/* Added Banners */}
           <Link to="/products"><FaBox /> Products</Link>
           <Link to="/orders"><FaClipboardList /> Orders</Link>
+          <Link to="/abandoned-checkouts">
+    <FaShoppingCart /> Abandoned Checkouts
+</Link>
           <Link to="/payment-config"><FaCog /> Payment Config</Link>
           <Link to="/shipping-rates"><FaShippingFast /> Shipping Rates</Link>
         </nav>
