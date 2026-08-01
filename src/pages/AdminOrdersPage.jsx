@@ -4,9 +4,6 @@ import "./AdminOrdersPage.css";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-/**
- * Helper: decode common HTML entities and collapse extra whitespace
- */
 function cleanText(raw) {
   if (raw === null || raw === undefined) return "";
   if (typeof raw !== "string") raw = String(raw);
@@ -20,9 +17,6 @@ function cleanText(raw) {
   return raw.replace(/\s+/g, " ").trim();
 }
 
-/**
- * Ensure phone is in international format for wa.me
- */
 function formatPhoneForWhatsApp(phone = "") {
   if (!phone) return "";
   let p = phone.replace(/[^\d+]/g, "");
@@ -37,50 +31,64 @@ export default function AdminOrdersPage() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [, setSelectedOrder] = useState(null);
   const [detailedOrder, setDetailedOrder] = useState(null);
-  // 🆕 New state for Universal Search
-const [searchQuery, setSearchQuery] = useState("");
-  
-  // 🆕 New state for Date Filtering
+
+  // Pagination & Search States
+  const [page, setPage] = useState(1);
+  const [limit] = useState(100);
+  const [totalOrders, setTotalOrders] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [searchInput, setSearchInput] = useState("");
+  const [activeSearch, setActiveSearch] = useState("");
+
+  // Filter States
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  // 🆕 New state for Status Filtering
-  const [statusFilter, setStatusFilter] = useState("All"); 
-  const [filteredOrders, setFilteredOrders] = useState([]); // Use this for display
-  
-  // 🆕 New state for Order Editing
+  const [statusFilter, setStatusFilter] = useState("All");
+
+  // Edit & Selection States
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFormData, setEditFormData] = useState({});
-
-  // 🆕 New state for Bulk Actions
   const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
-  
+
   const ALL_STATUSES = [
-      
-      "Processing",
-      "Confirmed",
-      "Packed",
-      "In Transit",
-      "Arriving Tomorrow",
-      "Out for Delivery",
-      "Delivered",
-      "Failed Delivery",
-      "Cancelled",
-      "Returned",
+    "Processing",
+    "Confirmed",
+    "Packed",
+    "In Transit",
+    "Arriving Tomorrow",
+    "Out for Delivery",
+    "Delivered",
+    "Failed Delivery",
+    "Cancelled",
+    "Returned",
   ];
 
-  
-
-
-  // fetch all orders (admin)
-  const fetchOrders = async () => {
+  // Fetch orders directly from DB with server side pagination & queries
+  const fetchOrders = async (
+    targetPage = page,
+    query = activeSearch,
+    start = startDate,
+    end = endDate,
+    status = statusFilter
+  ) => {
     try {
       setLoading(true);
-      const res = await api.get("/orders/admin/all");
-      const fetchedOrders = res.data || [];
-      setOrders(fetchedOrders);
-      // 🆕 Apply initial filter
-      applyFilters(fetchedOrders, startDate, endDate, statusFilter);
+      const params = {
+        page: targetPage,
+        limit,
+        search: query,
+        startDate: start,
+        endDate: end,
+        status: status,
+      };
+
+      const res = await api.get("/orders/admin/all", { params });
+      
+      setOrders(res.data.orders || []);
+      setTotalOrders(res.data.totalOrders || 0);
+      setTotalPages(res.data.totalPages || 1);
+      setPage(res.data.currentPage || 1);
     } catch (err) {
       console.error("Error fetching orders", err);
     } finally {
@@ -89,102 +97,47 @@ const [searchQuery, setSearchQuery] = useState("");
   };
 
   useEffect(() => {
-    fetchOrders();
+    fetchOrders(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 🆕 Helper function to apply ALL filters
-  const applyFilters = (allOrders, start, end, status, query) => {
-  let result = allOrders;
+  // Search Handler
+  const handleSearchSubmit = (e) => {
+    e?.preventDefault();
+    setActiveSearch(searchInput);
+    fetchOrders(1, searchInput, startDate, endDate, statusFilter);
+  };
 
-  // 1. Date Filter Logic
-  const startFilter = start ? new Date(start) : null;
-  const endFilter = end ? new Date(end) : null;
-
-  if (startFilter || endFilter) {
-    result = result.filter(order => {
-      const orderDate = new Date(order.createdAt);
-      if (startFilter) startFilter.setHours(0, 0, 0, 0);
-      if (endFilter) endFilter.setHours(23, 59, 59, 999);
-
-      const afterStart = startFilter ? orderDate >= startFilter : true;
-      const beforeEnd = endFilter ? orderDate <= endFilter : true;
-      return afterStart && beforeEnd;
-    });
-  }
-
-  // 2. Status Filter Logic
-  if (status === "All") {
-      result = result.filter(order => order.orderStatus !== "Abandoned");
-  } else {
-      result = result.filter(order => order.orderStatus === status);
-  }
-
-  // 3. 🆕 Universal Search Logic
-  if (query && query.trim() !== "") {
-    const lowQuery = query.toLowerCase();
-    
-    result = result.filter(order => {
-      // Check Order ID & Basic Info
-      const matchBasic = 
-        order._id.toLowerCase().includes(lowQuery) ||
-        (order.user?.name || "").toLowerCase().includes(lowQuery) ||
-        (order.user?.email || "").toLowerCase().includes(lowQuery) ||
-        (order.paymentInfo?.id || "").toLowerCase().includes(lowQuery) ||
-        (order.shippingInfo?.phone || "").toLowerCase().includes(lowQuery) ||
-        (order.shippingInfo?.name || "").toLowerCase().includes(lowQuery) ||
-        (order.shippingInfo?.address || "").toLowerCase().includes(lowQuery);
-
-      // Check nested items (Names, Specs, and Customizations)
-      const matchItems = order.orderItems?.some(item => {
-        const nameMatch = item.name.toLowerCase().includes(lowQuery);
-        
-        const specMatch = item.specifications?.some(s => 
-          s.key.toLowerCase().includes(lowQuery) || 
-          s.value.toLowerCase().includes(lowQuery)
-        );
-
-        const customMatch = item.customization?.some(c => 
-          (c.label || "").toLowerCase().includes(lowQuery) || 
-          (String(c.value || "")).toLowerCase().includes(lowQuery)
-        );
-
-        return nameMatch || specMatch || customMatch;
-      });
-
-      return matchBasic || matchItems;
-    });
-  }
-
-  setFilteredOrders(result);
-};
-  
-  // 🆕 Handler for date filter change
-  const handleDateFilterChange = (e) => {
-    const { name, value } = e.target;
-    let newStart = startDate;
-    let newEnd = endDate;
-    
-    if (name === 'startDate') {
-        setStartDate(value);
-        newStart = value;
-    } else if (name === 'endDate') {
-        setEndDate(value);
-        newEnd = value;
+  // Filter Handlers
+  const handleDateChange = (type, val) => {
+    if (type === "start") {
+      setStartDate(val);
+      fetchOrders(1, activeSearch, val, endDate, statusFilter);
+    } else {
+      setEndDate(val);
+      fetchOrders(1, activeSearch, startDate, val, statusFilter);
     }
-    
-    // Re-apply filter on change
-    applyFilters(orders, newStart, newEnd, statusFilter);
   };
 
-  // 🆕 Handler for status filter change
-  const handleStatusFilterChange = (e) => {
-    const newStatus = e.target.value;
-    setStatusFilter(newStatus);
-    applyFilters(orders, startDate, endDate, newStatus);
+  const handleStatusChange = (val) => {
+    setStatusFilter(val);
+    fetchOrders(1, activeSearch, startDate, endDate, val);
   };
 
-  // fetch single order
+  // Pagination Controls
+  const handleNextPage = () => {
+    if (page < totalPages) {
+      fetchOrders(page + 1);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (page > 1) {
+      fetchOrders(page - 1);
+    }
+  };
+
+  // Order Details / Edit handlers
   const loadDetailedOrder = async (id) => {
     try {
       const res = await api.get(`/orders/admin/order/${id}`);
@@ -203,33 +156,26 @@ const [searchQuery, setSearchQuery] = useState("");
   const closeDetails = () => {
     setSelectedOrder(null);
     setDetailedOrder(null);
-    setShowEditModal(false); // Close edit modal too
+    setShowEditModal(false);
   };
 
-  // 🆕 HANDLERS FOR ORDER EDITING
-const openEditModal = (order) => {
-    // ⚠️ ONLY initialize shippingInfo based on the backend restriction
+  const openEditModal = (order) => {
     setEditFormData({
-        shippingInfo: { ...order.shippingInfo },
+      shippingInfo: { ...order.shippingInfo },
     });
     setShowEditModal(true);
-};
+  };
 
   const handleEditChange = (e) => {
     const { name, value } = e.target;
-    
-    // Handle nested shippingInfo fields exclusively
     if (name.startsWith("shippingInfo.")) {
-        const key = name.split(".")[1];
-        setEditFormData((prev) => ({
-            ...prev,
-            shippingInfo: { 
-                ...prev.shippingInfo, 
-                [key]: value 
-            },
-        }));
-    } 
-};
+      const key = name.split(".")[1];
+      setEditFormData((prev) => ({
+        ...prev,
+        shippingInfo: { ...prev.shippingInfo, [key]: value },
+      }));
+    }
+  };
 
   const editOrderAdmin = async (e) => {
     e.preventDefault();
@@ -238,8 +184,8 @@ const openEditModal = (order) => {
       await api.put(`/orders/admin/edit/${detailedOrder._id}`, editFormData);
       alert("Order updated successfully!");
       setShowEditModal(false);
-      loadDetailedOrder(detailedOrder._id); // Refresh details
-      fetchOrders(); // Refresh table view
+      loadDetailedOrder(detailedOrder._id);
+      fetchOrders(page);
     } catch (err) {
       console.error("Error editing order", err);
       alert("Failed to update order: " + (err.response?.data?.details || err.message));
@@ -248,21 +194,16 @@ const openEditModal = (order) => {
     }
   };
 
-  // update status (Manual update)
   const updateStatus = async (id, status) => {
-    const orderToUpdate = orders.find(o => o._id === id);
-
-  // If the order is already Abandoned, stop the update
-  if (orderToUpdate && orderToUpdate.orderStatus === "Abandoned") {
-    alert("Abandoned checkout status cannot be changed.");
-    return;
-  }
-
-  // 1. Block changing TO abandoned
-  if (status === "Abandoned") {
-    alert("You cannot manually change a regular order to Abandoned status.");
-    return;
-  }
+    const orderToUpdate = orders.find((o) => o._id === id);
+    if (orderToUpdate && orderToUpdate.orderStatus === "Abandoned") {
+      alert("Abandoned checkout status cannot be changed.");
+      return;
+    }
+    if (status === "Abandoned") {
+      alert("You cannot manually change a regular order to Abandoned status.");
+      return;
+    }
 
     try {
       await api.put(`/orders/admin/update/${id}`, { status });
@@ -277,25 +218,19 @@ const openEditModal = (order) => {
     }
   };
 
-  // delete order (NOW BLOCKED on backend, but client-side UI remains the same)
   const deleteOrder = async (id) => {
-    if (!window.confirm("Attempt to delete this order? (Note: Deletion is often disabled on the server for data integrity.)")) return;
+    if (!window.confirm("Attempt to delete this order?")) return;
     try {
       await api.delete(`/orders/admin/delete/${id}`);
-      // If the backend blocks the delete, this code won't run, but we catch the error below.
-      setOrders((prev) => prev.filter((o) => o._id !== id));
+      fetchOrders(page);
       if (detailedOrder?._id === id) closeDetails();
       alert("Order deleted successfully!");
     } catch (err) {
-      console.error("Error deleting order", err);
-      // The backend now returns a message if deletion is blocked.
-      alert(
-        "Delete failed: " + (err.response?.data?.message || err.message)
-      );
+      alert("Delete failed: " + (err.response?.data?.message || err.message));
     }
   };
 
-  // WhatsApp actions (Same as before)
+  // WhatsApp & Export Utilities
   const sendWhatsApp = (order, type = "confirm") => {
     const phoneRaw = order?.shippingInfo?.phone || order?.shippingInfo?.mobile || "";
     const phone = formatPhoneForWhatsApp(phoneRaw);
@@ -304,35 +239,23 @@ const openEditModal = (order) => {
     const name = cleanText(order?.shippingInfo?.name || order?.user?.name || "Customer");
     const orderId = order._id;
     const trackLink = `https://cuztory.in/track-order?order_id=${orderId}`;
-
-    const itemNames =
-      order.orderItems?.map((item) => cleanText(item.name)).join(", ") || "your item";
+    const itemNames = order.orderItems?.map((item) => cleanText(item.name)).join(", ") || "your item";
 
     let msg = "";
-
     if (type === "confirm") {
       msg = `📦 Cuztory – Order Confirmed\n\nHi ${name},\nOrder ID: ${orderId}\nYour ${itemNames} is confirmed.\nTrack: ${trackLink}`;
-      const hasCustomization = order.orderItems?.some(
-        (item) => item.customization && item.customization.length > 0
-      );
-      if (hasCustomization)
-        msg += ``;
     } else if (type === "status") {
       msg = `🔄 Order Status Update\nOrder ID: ${orderId}\nStatus: ${order.orderStatus}\nTrack: ${trackLink}`;
     } else if (type === "cancel") {
       msg = `❌ Order Cancelled\nHi ${name},\nYour order (${orderId}) has been cancelled.\nTrack: ${trackLink}`;
     }
 
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
-    window.open(url, "_blank");
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
   };
 
-  // specifications and customization helpers (Same as before)
   const extractSpecifications = (item) => {
     if (!item?.specifications?.length) return "-";
-    return item.specifications
-      .map((s) => `${cleanText(s.key)}: ${cleanText(s.value)}`)
-      .join(", ");
+    return item.specifications.map((s) => `${cleanText(s.key)}: ${cleanText(s.value)}`).join(", ");
   };
 
   const extractCustomization = (item) => {
@@ -348,9 +271,7 @@ const openEditModal = (order) => {
       .join(" | ") || "-";
   };
 
-  // PDF invoice (Same as before)
   const downloadInvoice = (order) => {
-    // ... (PDF logic remains the same)
     if (!order) return;
     try {
       const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -378,23 +299,6 @@ const openEditModal = (order) => {
       doc.text(`Phone: ${phone || "N/A"}`, left, cursorY);
       cursorY += 18;
 
-      const shipping = order.shippingInfo || {};
-      const postal = shipping.postalCode || shipping.pincode || "";
-      const addressLines = [
-        cleanText(shipping.name || ""),
-        cleanText(shipping.address || ""),
-        `${cleanText(shipping.city || "")}, ${cleanText(shipping.state || "")} ${
-          postal ? `- ${postal}` : ""
-        }`,
-        cleanText(shipping.country || ""),
-      ].filter(Boolean);
-
-      doc.text("Shipping Address:", left, cursorY);
-      cursorY += 14;
-      const wrapped = doc.splitTextToSize(addressLines.join(", "), 500);
-      doc.text(wrapped, left, cursorY);
-      cursorY += wrapped.length * 12 + 10;
-
       const tableBody = (order.orderItems || []).map((item) => [
         cleanText(item.name || "-"),
         item.quantity || 1,
@@ -409,50 +313,8 @@ const openEditModal = (order) => {
         body: tableBody,
         styles: { fontSize: 9 },
         headStyles: { fillColor: [30, 136, 229] },
-        columnStyles: {
-          0: { cellWidth: 170 },
-          1: { cellWidth: 40, halign: "center" },
-          2: { cellWidth: 70, halign: "right" },
-          3: { cellWidth: 140 },
-          4: { cellWidth: 140 },
-        },
         theme: "grid",
       });
-
-      const afterTableY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : cursorY + 80;
-
-      const itemsPrice = Number(order.itemsPrice || 0);
-      const shippingPrice = Number(order.shippingPrice || 0);
-      const discount = Number(order.discount || 0);
-      const total = Number(order.totalPrice || 0);
-      const paid = Number(order.amountPaid || 0);
-      const due = Number(order.amountDue || 0);
-
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text("Payment Summary:", left, afterTableY);
-
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(11);
-      let payY = afterTableY + 18;
-
-      const payLines = [
-        `Items Price: ₹${itemsPrice.toFixed(2)}`,
-        `Shipping Charges: ₹${shippingPrice.toFixed(2)}`,
-        `Discount: ₹${discount.toFixed(2)}`,
-        `Total Amount: ₹${total.toFixed(2)}`,
-        `Amount Paid: ₹${paid.toFixed(2)}`,
-        `Amount Due: ₹${due.toFixed(2)}`,
-      ];
-      payLines.forEach((line) => {
-        const wrap = doc.splitTextToSize(line, 350);
-        doc.text(wrap, left, payY);
-        payY += wrap.length * 14;
-      });
-
-      doc.setFontSize(9);
-      const footY = doc.internal.pageSize.height - 40;
-      doc.text("Thank you for choosing Cuztory.", left, footY);
 
       doc.save(`Invoice_${order._id}.pdf`);
     } catch (err) {
@@ -463,59 +325,43 @@ const openEditModal = (order) => {
 
   const downloadExcelDetails = () => {
     if (selectedOrderIds.size === 0) {
-        alert("Please select at least one order.");
-        return;
+      alert("Please select at least one order.");
+      return;
     }
 
-    // Filter selected orders from the main list
-    const selectedData = orders.filter(order => selectedOrderIds.has(order._id));
-
-    // Define CSV Headers
+    const selectedData = orders.filter((order) => selectedOrderIds.has(order._id));
     let csvContent = "Order ID,Customer,Status,Product,Specifications,Customizations\n";
 
-    selectedData.forEach(order => {
-        order.orderItems.forEach(item => {
-            // Use your existing helper functions to clean text
-            const specs = extractSpecifications(item).replace(/,/g, ";"); // Replace commas to avoid CSV breaks
-            const custom = extractCustomization(item).replace(/,/g, ";");
-            const customerName = order.user?.name || order.shippingInfo?.name || "Guest";
-
-            csvContent += `${order._id},${customerName},${order.orderStatus},${item.name},${specs},${custom}\n`;
-        });
+    selectedData.forEach((order) => {
+      order.orderItems.forEach((item) => {
+        const specs = extractSpecifications(item).replace(/,/g, ";");
+        const custom = extractCustomization(item).replace(/,/g, ";");
+        const customerName = order.user?.name || order.shippingInfo?.name || "Guest";
+        csvContent += `${order._id},${customerName},${order.orderStatus},${item.name},${specs},${custom}\n`;
+      });
     });
 
-    // Create and download the file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
+    link.href = URL.createObjectURL(blob);
     link.setAttribute("download", `Order_Details_${new Date().toLocaleDateString()}.csv`);
-    link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-};
+  };
 
-  // Shiprocket Create Order (Single)
+  // Shiprocket Actions
   const createShiprocketOrder = async (orderId) => {
     try {
       const res = await api.post(`/orders/admin/shiprocket/${orderId}`);
-      alert(
-        `Shiprocket order created! SR Order ID: ${res.data.shipData.order_id}. AWB: ${
-          res.data.shipData.awb_code || "Not yet assigned"
-        }`
-      );
-      loadDetailedOrder(orderId); // Refresh detailed view
-      fetchOrders(); // Refresh table view
+      alert(`Shiprocket order created! SR Order ID: ${res.data.shipData.order_id}`);
+      loadDetailedOrder(orderId);
+      fetchOrders(page);
     } catch (err) {
-      console.error("Shiprocket creation failed", err);
-      alert(
-        "Failed to create Shiprocket order: " + (err.response?.data?.message || err.message)
-      );
+      alert("Failed to create Shiprocket order: " + (err.response?.data?.message || err.message));
     }
   };
 
-  // 🆕 Shiprocket Create Order (Bulk)
   const bulkCreateShiprocketOrders = async () => {
     if (selectedOrderIds.size === 0) return alert("Select at least one order.");
     if (!window.confirm(`Create Shiprocket orders for ${selectedOrderIds.size} orders?`)) return;
@@ -524,226 +370,239 @@ const openEditModal = (order) => {
     try {
       const orderIds = Array.from(selectedOrderIds);
       const res = await api.post(`/orders/admin/shiprocket/bulk`, { orderIds });
-      
-      const successCount = res.data.results.filter(r => r.status === 'Success').length;
-      const failCount = res.data.results.filter(r => r.status === 'Failed').length;
-      const skipCount = res.data.results.filter(r => r.status === 'Skipped').length;
-
-      alert(`Bulk creation complete:\n✅ Success: ${successCount}\n⚠️ Skipped: ${skipCount}\n❌ Failed: ${failCount}`);
-      
-      setSelectedOrderIds(new Set()); // Clear selection
-      fetchOrders(); // Refresh table view
+      alert(`Bulk creation complete:\nSuccess: ${res.data.results.filter(r => r.status === 'Success').length}`);
+      setSelectedOrderIds(new Set());
+      fetchOrders(page);
     } catch (err) {
-      console.error("Bulk Shiprocket creation failed", err);
       alert("Bulk Shiprocket creation failed: " + (err.response?.data?.message || err.message));
     } finally {
       setBulkActionLoading(false);
     }
   };
 
-  // Shiprocket Sync Status & Tracking (Same as before)
   const syncShiprocketStatus = async (orderId) => {
     if (syncLoading) return;
     setSyncLoading(true);
     try {
       const res = await api.post(`/orders/admin/sync-shiprocket/${orderId}`);
       alert(res.data.message);
-      loadDetailedOrder(orderId); // Refresh detailed view
-      fetchOrders(); // Refresh table view to show new status
+      loadDetailedOrder(orderId);
+      fetchOrders(page);
     } catch (err) {
-      console.error("Shiprocket sync failed", err);
-      alert(
-        "Failed to synchronize with Shiprocket: " + (err.response?.data?.details || err.message)
-      );
+      alert("Failed to sync: " + (err.response?.data?.details || err.message));
     } finally {
       setSyncLoading(false);
     }
   };
 
-  // 🆕 HANDLERS FOR BULK SELECTION
+  // 🆕 SYNC SELECTED SHIPROCKET ORDERS
+  const syncSelectedShiprocketOrders = async () => {
+    if (selectedOrderIds.size === 0) return alert("Select at least one order to sync.");
+    if (!window.confirm(`Sync Shiprocket status for ${selectedOrderIds.size} selected order(s)?`)) return;
+
+    setSyncLoading(true);
+    try {
+      const orderIds = Array.from(selectedOrderIds);
+      const res = await api.post("/orders/admin/sync-shiprocket-selected", { orderIds });
+      alert(
+        `Selected Sync Complete:\n✅ Updated: ${res.data.updated}\n⚠️ Skipped: ${res.data.skipped}\n❌ Failed: ${res.data.failed}`
+      );
+      fetchOrders(page);
+    } catch (err) {
+      alert("Selected sync failed: " + (err.response?.data?.message || err.message));
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  // GLOBAL SHIPROCKET SYNC
+  const syncAllShiprocketOrders = async () => {
+    if (!window.confirm("Sync ALL Shiprocket orders? This may take 30–60 seconds.")) return;
+    try {
+      setSyncLoading(true);
+      const res = await api.post("/orders/admin/sync-shiprocket-all");
+      alert(
+        `Global Sync Completed:\nUpdated: ${res.data.updated}\nSkipped: ${res.data.skipped}\nFailed: ${res.data.failed}`
+      );
+      fetchOrders(page);
+    } catch (err) {
+      alert("Global sync failed: " + (err.response?.data?.message || err.message));
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const resetShiprocketData = async (orderId) => {
+    if (!window.confirm("Are you sure you want to clear Shiprocket data for this order?")) return;
+    try {
+      await api.put(`/orders/admin/shiprocket/reset/${orderId}`);
+      alert("Shiprocket data cleared.");
+      loadDetailedOrder(orderId);
+      fetchOrders(page);
+    } catch (err) {
+      alert("Failed to reset: " + (err.response?.data?.message || err.message));
+    }
+  };
+
+  // Selection Logic
   const toggleOrderSelection = (orderId) => {
-    setSelectedOrderIds(prev => {
+    setSelectedOrderIds((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(orderId)) {
-        newSet.delete(orderId);
-      } else {
-        newSet.add(orderId);
-      }
+      if (newSet.has(orderId)) newSet.delete(orderId);
+      else newSet.add(orderId);
       return newSet;
     });
   };
 
-  // Locate this function in your code
-const toggleSelectAll = () => {
-    if (selectedOrderIds.size === filteredOrders.length) {
-        // If all are selected, clear selection
-        setSelectedOrderIds(new Set());
+  const toggleSelectAll = () => {
+    if (selectedOrderIds.size === orders.length) {
+      setSelectedOrderIds(new Set());
     } else {
-        // Filter out "Abandoned" orders before selecting all
-        const validOrderIds = filteredOrders
-            .filter(order => order.orderStatus !== "Abandoned")
-            .map(order => order._id);
-            
-        setSelectedOrderIds(new Set(validOrderIds));
+      const validOrderIds = orders
+        .filter((order) => order.orderStatus !== "Abandoned")
+        .map((order) => order._id);
+      setSelectedOrderIds(new Set(validOrderIds));
     }
-};
+  };
 
-  // 🆕 Reset Shiprocket Info
-const resetShiprocketData = async (orderId) => {
-    if (!window.confirm("Are you sure you want to clear the Shiprocket data for this order? This allows re-creating the order.")) return;
-
-    try {
-        await api.put(`/orders/admin/shiprocket/reset/${orderId}`);
-        alert("Shiprocket data cleared. Refreshing details...");
-        loadDetailedOrder(orderId); // Refresh detailed view
-        fetchOrders(); // Refresh table view
-    } catch (err) {
-        console.error("Shiprocket reset failed", err);
-        alert(
-            "Failed to reset Shiprocket data: " + (err.response?.data?.message || err.message)
-        );
-    }
-};
-
-/**
- * Helper: Returns a styled tag for payment status
- * * 1. PAID (due <= 0) -> Dark Green
- * 2. ADVANCED (paid > 0 AND due > 0) -> Light Green
- * 3. COD/PENDING (paid === 0) -> Yellow
- */
-const getPaymentTag = (order) => {
+  const getPaymentTag = (order) => {
     const amountPaid = Number(order.amountPaid || 0);
     const amountDue = Number(order.amountDue || 0);
-    
-    // 1. PAID (due <= 0) - Dark Green
-    if (amountDue <= 0) {
-        return <span className="payment-tag paid">PAID</span>;
-    } 
-    
-    // 2. ADVANCED (paid > 0 AND due > 0) - Light Green
-    if (amountPaid > 0 && amountDue > 0) {
-        return <span className="payment-tag advanced">ADVANCED</span>;
-    } 
-    
-    // 3. COD/PENDING (paid === 0) - Yellow
-    if (amountPaid === 0) {
-        // Use paymentMethod for better label if available, otherwise PENDING
-        return <span className="payment-tag cod">{order.paymentMethod === 'COD' ? 'COD' : 'PENDING'}</span>;
-    }
+    if (amountDue <= 0) return <span className="payment-tag paid">PAID</span>;
+    if (amountPaid > 0 && amountDue > 0) return <span className="payment-tag advanced">ADVANCED</span>;
+    return <span className="payment-tag cod">{order.paymentMethod === "COD" ? "COD" : "PENDING"}</span>;
+  };
 
-    // Fallback (e.g., partial payment, no method defined)
-    return <span className="payment-tag pending-payment">PENDING PAYMENT</span>;
-};
-
-  // render
   return (
     <div className="admin-orders">
       <h2>📦 All Orders</h2>
 
-      {/* 🆕 Date and Status Filter Bar */}
-      <div className="filter-bar" style={{marginBottom: '15px', padding: '10px', border: '1px solid #ccc', borderRadius: '5px', display: 'flex', gap: '20px', alignItems: 'center'}}>
+      {/* Filter and DB Search Bar */}
+      <form
+        onSubmit={handleSearchSubmit}
+        className="filter-bar"
+        style={{
+          marginBottom: "15px",
+          padding: "10px",
+          border: "1px solid #ccc",
+          borderRadius: "5px",
+          display: "flex",
+          gap: "15px",
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
         <label>
-            Start Date:
-            <input 
-                type="date" 
-                name="startDate" 
-                value={startDate} 
-                onChange={handleDateFilterChange} 
-                style={{marginLeft: '10px', padding: '5px'}}
-            />
+          Start Date:
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => handleDateChange("start", e.target.value)}
+            style={{ marginLeft: "5px", padding: "5px" }}
+          />
         </label>
         <label>
-            End Date:
-            <input 
-                type="date" 
-                name="endDate" 
-                value={endDate} 
-                onChange={handleDateFilterChange} 
-                style={{marginLeft: '10px', padding: '5px'}}
-            />
+          End Date:
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => handleDateChange("end", e.target.value)}
+            style={{ marginLeft: "5px", padding: "5px" }}
+          />
         </label>
-        {/* 🆕 Status Filter */}
         <label>
-            Status:
-            <select
-                value={statusFilter}
-                onChange={handleStatusFilterChange}
-                style={{marginLeft: '10px', padding: '5px'}}
-            >
-                <option value="All">All Statuses</option>
-                {ALL_STATUSES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                ))}
-            </select>
+          Status:
+          <select
+            value={statusFilter}
+            onChange={(e) => handleStatusChange(e.target.value)}
+            style={{ marginLeft: "5px", padding: "5px" }}
+          >
+            <option value="All">All Statuses</option>
+            {ALL_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
         </label>
 
-      {/* Universal Search Input */}
-  <label style={{ flex: '1', minWidth: '250px' }}>
-      Search Orders:
-      <input 
-          type="text" 
-          placeholder="Search Name, ID, Phone, or Customization..." 
-          value={searchQuery}
-          onChange={(e) => {
-              setSearchQuery(e.target.value);
-              applyFilters(orders, startDate, endDate, statusFilter, e.target.value);
-          }}
-          style={{ marginLeft: '10px', padding: '5px', width: '80%' }}
-      />
-  </label>
+        {/* Database Search Input with Search Button */}
+        <div style={{ flex: "1", display: "flex", gap: "8px", minWidth: "280px" }}>
+          <input
+            type="text"
+            placeholder="Search DB (Name, ID, Phone, Specs...)"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            style={{ padding: "6px", flex: "1" }}
+          />
+          <button type="submit" className="btn" style={{ padding: "6px 15px", backgroundColor: "#007bff", color: "#fff" }}>
+            🔍 Search
+          </button>
+        </div>
+      </form>
 
-      </div>
-
-        <div className="bulk-actions-bar">
-
-    {/* New Download Button */}
-    <button 
-        onClick={downloadExcelDetails} 
-        disabled={selectedOrderIds.size === 0}
-        className="btn"
-        style={{ backgroundColor: '#28a745', marginLeft: '10px' }}
-    >
-        Download Specs (Excel)
-    </button>
-</div>
-
-      <div className="bulk-actions-bar">
-        <button 
-          onClick={bulkCreateShiprocketOrders} 
+      {/* Top Action Bar & Sync Buttons */}
+      <div className="bulk-actions-bar" style={{ display: "flex", gap: "10px", marginBottom: "15px", flexWrap: "wrap" }}>
+        <button
+          onClick={bulkCreateShiprocketOrders}
           disabled={selectedOrderIds.size === 0 || bulkActionLoading}
           className="btn-bulk"
         >
-          {bulkActionLoading ? 'Processing...' : `🚚 Create Shiprocket for ${selectedOrderIds.size} Orders`}
+          {bulkActionLoading ? "Processing..." : `🚚 Create SR (${selectedOrderIds.size})`}
+        </button>
+
+        {/* 🆕 Sync Selected Shiprocket Orders */}
+        <button
+          onClick={syncSelectedShiprocketOrders}
+          disabled={selectedOrderIds.size === 0 || syncLoading}
+          className="btn-bulk"
+          style={{ backgroundColor: "#17a2b8" }}
+        >
+          {syncLoading ? "Syncing..." : `🔄 Sync Selected SR (${selectedOrderIds.size})`}
+        </button>
+
+        {/* Global Shiprocket Sync */}
+        <button
+          onClick={syncAllShiprocketOrders}
+          className="btn-bulk"
+          disabled={syncLoading}
+          style={{ backgroundColor: "#6c757d" }}
+        >
+          {syncLoading ? "Syncing All..." : "🔄 Sync ALL Shiprocket Orders"}
+        </button>
+
+        <button
+          onClick={downloadExcelDetails}
+          disabled={selectedOrderIds.size === 0}
+          className="btn"
+          style={{ backgroundColor: "#28a745" }}
+        >
+          Download Specs (Excel)
         </button>
       </div>
 
-      <div className="bulk-actions-bar">
-
-  {/* 🆕 GLOBAL SHIPROCKET SYNC BUTTON */}
-  <button
-    onClick={async () => {
-      if (!window.confirm("Sync ALL Shiprocket orders? This may take 30–60 seconds.")) return;
-      try {
-        setSyncLoading(true);
-        const res = await api.post("/orders/admin/sync-shiprocket-all");
-        alert(
-          `Global Sync Completed:\nUpdated: ${res.data.updated}\nSkipped: ${res.data.skipped}\nFailed: ${res.data.failed}`
-        );
-        fetchOrders(); // Refresh table
-      } catch (err) {
-        alert("Global sync failed: " + (err.response?.data?.message || err.message));
-      } finally {
-        setSyncLoading(false);
-      }
-    }}
-    className="btn-bulk"
-    disabled={syncLoading}
-  >
-    {syncLoading ? "Syncing All..." : "🔄 Sync ALL Shiprocket Orders"}
-  </button>
-
-</div>
-
+      {/* Pagination Summary & Controls Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "10px",
+          padding: "5px 0",
+        }}
+      >
+        <div style={{ fontSize: "14px", fontWeight: "bold" }}>
+          Total Orders Found: <span style={{ color: "#007bff" }}>{totalOrders}</span> | Page {page} of {totalPages}
+        </div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button onClick={handlePrevPage} disabled={page === 1 || loading} className="btn">
+            ◀ Prev
+          </button>
+          <button onClick={handleNextPage} disabled={page >= totalPages || loading} className="btn">
+            Next ▶
+          </button>
+        </div>
+      </div>
 
       {loading ? (
         <p>Loading orders...</p>
@@ -752,134 +611,91 @@ const getPaymentTag = (order) => {
           <thead>
             <tr>
               <th>
-                <input 
-                  type="checkbox" 
-                  checked={selectedOrderIds.size > 0 && selectedOrderIds.size === filteredOrders.length} 
-                  onChange={toggleSelectAll} 
+                <input
+                  type="checkbox"
+                  checked={selectedOrderIds.size > 0 && selectedOrderIds.size === orders.length}
+                  onChange={toggleSelectAll}
                 />
               </th>
               <th>Sl No.</th>
               <th>Order ID</th>
               <th>Customer</th>
               <th>Total</th>
-              
               <th>Status</th>
               <th>Placed</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filteredOrders.length === 0 ? (
+            {orders.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: "center" }}>
+                <td colSpan="8" style={{ textAlign: "center" }}>
                   No Orders Found
                 </td>
-                
               </tr>
             ) : (
-              filteredOrders.map((order, index) => {
+              orders.map((order, index) => {
                 const postal = order.shippingInfo?.postalCode || order.shippingInfo?.pincode || "";
-                
-                // Determine available status options based on current status
                 let allowedStatuses = ALL_STATUSES;
-                if (order.orderStatus === "Delivered") {
-                    allowedStatuses = ["Delivered", "Returned"]; // Can only change to Returned
-                } else if (order.orderStatus === "Returned" || order.orderStatus === "Cancelled" || order.orderStatus === "Failed Delivery") { 
-                    // Cannot change status if Returned, Cancelled or Failed Delivery
-                    allowedStatuses = [order.orderStatus]; 
+                if (order.orderStatus === "Delivered") allowedStatuses = ["Delivered", "Returned"];
+                else if (["Returned", "Cancelled", "Failed Delivery"].includes(order.orderStatus)) {
+                  allowedStatuses = [order.orderStatus];
                 }
-                
-                // 🆕 Logic for Row Highlighting (UPDATED for 'Returned')
-                let rowClass = '';
-                const hasShiprocketStatus = (order.shiprocketAWB && order.fullTrackingHistory?.shipment_track?.[0]?.current_status);
-                
-                if (order.orderStatus === "Delivered") {
-                    rowClass = 'delivered-row'; // Light Green
-                } else if (order.orderStatus === "Cancelled" || order.orderStatus === "Failed Delivery" || order.orderStatus === "Returned") {
-                    // 🚨 Added "Returned" here
-                    rowClass = 'failed-or-cancelled-row'; // Light Red
-                } else if (hasShiprocketStatus) {
-                    // If it has AWB/SR Status, and is not one of the terminal statuses above
-                    rowClass = 'in-transit-row'; // Light Blue
-                }
-                
+
+                let rowClass = "";
+                const hasShiprocketStatus = order.shiprocketAWB && order.fullTrackingHistory?.shipment_track?.[0]?.current_status;
+                if (order.orderStatus === "Delivered") rowClass = "delivered-row";
+                else if (["Cancelled", "Failed Delivery", "Returned"].includes(order.orderStatus)) rowClass = "failed-or-cancelled-row";
+                else if (hasShiprocketStatus) rowClass = "in-transit-row";
+
                 return (
-                  
-                  <tr 
-                    key={order._id} 
-                    className={`${selectedOrderIds.has(order._id) ? 'selected-row' : ''} ${rowClass}`} // CORRECTED CLASS ASSIGNMENT
-                  >
-                    
-                    
+                  <tr key={order._id} className={`${selectedOrderIds.has(order._id) ? "selected-row" : ""} ${rowClass}`}>
                     <td>
-                      <input 
-                        type="checkbox" 
-                        checked={selectedOrderIds.has(order._id)} 
+                      <input
+                        type="checkbox"
+                        checked={selectedOrderIds.has(order._id)}
                         onChange={() => toggleOrderSelection(order._id)}
                       />
                     </td>
-                    <td style={{ fontWeight: 'bold' }}>{index + 1}</td>
-
+                    <td style={{ fontWeight: "bold" }}>{(page - 1) * limit + index + 1}</td>
                     <td>
-  <div className="order-id-container">
-    {order._id}
-    {/* Only show the dot if shiprocketOrderId exists */}
-    {order.shiprocketOrderId && (
-      <span className="sr-dot" title="Shiprocket Order Created"></span>
-    )}
-  </div>
-</td>
-                    
+                      <div className="order-id-container">
+                        {order._id}
+                        {order.shiprocketOrderId && <span className="sr-dot" title="Shiprocket Order Created"></span>}
+                      </div>
+                    </td>
                     <td>
                       <div>
                         <strong>{order.user?.name || order.shippingInfo?.name || "Guest"}</strong>
                       </div>
-                      <div style={{ fontSize: 12, color: "#666" }}>
-                        {order.user?.email || order.guestEmail || ""}
-                      </div>
-                      <div style={{ fontSize: 12, color: "#666" }}>
-                        📞 {order.shippingInfo?.phone || "N/A"}
-                      </div>
+                      <div style={{ fontSize: 12, color: "#666" }}>{order.user?.email || order.guestEmail || ""}</div>
+                      <div style={{ fontSize: 12, color: "#666" }}>📞 {order.shippingInfo?.phone || "N/A"}</div>
                       <div style={{ fontSize: 12, color: "#666" }}>📮 {postal || "N/A"}</div>
-                      {/* 🆕 Payment Tag Display */}
-                      <div style={{ fontSize: 12, marginTop: 5 }}>
-                          {getPaymentTag(order)}
-                      </div>
+                      <div style={{ fontSize: 12, marginTop: 5 }}>{getPaymentTag(order)}</div>
                     </td>
                     <td>₹{(Number(order.totalPrice) || 0).toFixed(2)}</td>
                     <td>
                       <select
-  value={order.orderStatus}
-  onChange={(e) => updateStatus(order._id, e.target.value)}
-  // 1. Lock the dropdown completely if the order is already Abandoned
-  disabled={order.orderStatus === "Abandoned"}
-  className={order.orderStatus === "Abandoned" ? "disabled-select" : ""}
->
-  {allowedStatuses.map((s) => {
-    // 2. Hide the "Abandoned" option from the list if the order is a real order
-    // This prevents you from accidentally changing a Pending/Processing order to Abandoned
-    if (order.orderStatus !== "Abandoned" && s === "Abandoned") {
-      return null;
-    }
-
-    return (
-      <option key={s} value={s}>
-        {s}
-      </option>
-    );
-  })}
-</select>
-
-                      
-
-                    <div style={{ fontSize: "12px", marginBottom: "5px" }}>
-                        <b>SR Status:</b>{" "}
-                        {order.fullTrackingHistory?.shipment_track?.[0]?.current_status || "—"}
-                    </div>
-                    <div style={{ fontSize: "12px", marginBottom: "5px" }}>
+                        value={order.orderStatus}
+                        onChange={(e) => updateStatus(order._id, e.target.value)}
+                        disabled={order.orderStatus === "Abandoned"}
+                        className={order.orderStatus === "Abandoned" ? "disabled-select" : ""}
+                      >
+                        {allowedStatuses.map((s) => {
+                          if (order.orderStatus !== "Abandoned" && s === "Abandoned") return null;
+                          return (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <div style={{ fontSize: "12px", marginBottom: "5px" }}>
+                        <b>SR Status:</b> {order.fullTrackingHistory?.shipment_track?.[0]?.current_status || "—"}
+                      </div>
+                      <div style={{ fontSize: "12px", marginBottom: "5px" }}>
                         <b>AWB:</b> {order.shiprocketAWB || "Not Assigned"}
-                    </div>
-
+                      </div>
                     </td>
                     <td>{new Date(order.createdAt).toLocaleString()}</td>
                     <td>
@@ -889,7 +705,6 @@ const getPaymentTag = (order) => {
                       <button className="btn-delete" onClick={() => deleteOrder(order._id)}>
                         🗑 Delete
                       </button>
-                      
                     </td>
                   </tr>
                 );
@@ -899,7 +714,29 @@ const getPaymentTag = (order) => {
         </table>
       )}
 
-      {/* 🆕 Order Details Modal (View/Actions) */}
+      {/* Pagination Footer */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginTop: "15px",
+        }}
+      >
+        <div>
+          Showing page <b>{page}</b> of <b>{totalPages}</b> ({totalOrders} Total Orders)
+        </div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button onClick={handlePrevPage} disabled={page === 1 || loading} className="btn">
+            ◀ Prev 100
+          </button>
+          <button onClick={handleNextPage} disabled={page >= totalPages || loading} className="btn">
+            Next 100 ▶
+          </button>
+        </div>
+      </div>
+
+       {/* 🆕 Order Details Modal (View/Actions) */}
       {detailedOrder && !showEditModal && (
         <div className="modal">
           <div className="modal-content-large">
