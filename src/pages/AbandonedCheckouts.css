@@ -219,3 +219,22 @@
 }
 
 }
+
+@media (max-width: 900px) {
+  .abandoned-page {
+    padding: 12px;
+  }
+
+  .abandoned-page table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap; /* Prevents cell collapse on small screens */
+  }
+
+  .abandoned-page .checkout-modal {
+    width: 92%;
+    max-height: 85vh;
+    padding: 16px;
+    margin: auto;
+  }
+}
