@@ -25,6 +25,21 @@ function formatPhoneForWhatsApp(phone = "") {
   return p;
 }
 
+// Generates a consistent background color based on the text
+function getAvatarColor(str = "") {
+  const colors = [
+    "#E53935", "#D81B60", "#8E24AA", "#5E35B1",
+    "#3949AB", "#1E88E5", "#039BE5", "#00ACC1",
+    "#00897B", "#43A047", "#7CB342", "#FB8C00",
+    "#F4511E", "#6D4C41", "#546E7A"
+  ];
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -64,7 +79,6 @@ export default function AdminOrdersPage() {
     "Returned",
   ];
 
-  // Fetch orders directly from DB with server side pagination & queries
   const fetchOrders = async (
     targetPage = page,
     query = activeSearch,
@@ -98,17 +112,14 @@ export default function AdminOrdersPage() {
 
   useEffect(() => {
     fetchOrders(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Search Handler
   const handleSearchSubmit = (e) => {
     e?.preventDefault();
     setActiveSearch(searchInput);
     fetchOrders(1, searchInput, startDate, endDate, statusFilter);
   };
 
-  // Filter Handlers
   const handleDateChange = (type, val) => {
     if (type === "start") {
       setStartDate(val);
@@ -124,7 +135,6 @@ export default function AdminOrdersPage() {
     fetchOrders(1, activeSearch, startDate, endDate, val);
   };
 
-  // Pagination Controls
   const handleNextPage = () => {
     if (page < totalPages) {
       fetchOrders(page + 1);
@@ -137,7 +147,6 @@ export default function AdminOrdersPage() {
     }
   };
 
-  // Order Details / Edit handlers
   const loadDetailedOrder = async (id) => {
     try {
       const res = await api.get(`/orders/admin/order/${id}`);
@@ -230,7 +239,6 @@ export default function AdminOrdersPage() {
     }
   };
 
-  // WhatsApp & Export Utilities
   const sendWhatsApp = (order, type = "confirm") => {
     const phoneRaw = order?.shippingInfo?.phone || order?.shippingInfo?.mobile || "";
     const phone = formatPhoneForWhatsApp(phoneRaw);
@@ -350,7 +358,6 @@ export default function AdminOrdersPage() {
     document.body.removeChild(link);
   };
 
-  // Shiprocket Actions
   const createShiprocketOrder = async (orderId) => {
     try {
       const res = await api.post(`/orders/admin/shiprocket/${orderId}`);
@@ -395,7 +402,6 @@ export default function AdminOrdersPage() {
     }
   };
 
-  // 🆕 SYNC SELECTED SHIPROCKET ORDERS
   const syncSelectedShiprocketOrders = async () => {
     if (selectedOrderIds.size === 0) return alert("Select at least one order to sync.");
     if (!window.confirm(`Sync Shiprocket status for ${selectedOrderIds.size} selected order(s)?`)) return;
@@ -415,7 +421,6 @@ export default function AdminOrdersPage() {
     }
   };
 
-  // GLOBAL SHIPROCKET SYNC
   const syncAllShiprocketOrders = async () => {
     if (!window.confirm("Sync ALL Shiprocket orders? This may take 30–60 seconds.")) return;
     try {
@@ -444,7 +449,6 @@ export default function AdminOrdersPage() {
     }
   };
 
-  // Selection Logic
   const toggleOrderSelection = (orderId) => {
     setSelectedOrderIds((prev) => {
       const newSet = new Set(prev);
@@ -526,7 +530,7 @@ export default function AdminOrdersPage() {
           </select>
         </label>
 
-        {/* Database Search Input with Search Button */}
+        {/* Database Search Input */}
         <div style={{ flex: "1", display: "flex", gap: "8px", minWidth: "280px" }}>
           <input
             type="text"
@@ -541,7 +545,7 @@ export default function AdminOrdersPage() {
         </div>
       </form>
 
-      {/* Top Action Bar & Sync Buttons */}
+      {/* Top Action Bar */}
       <div className="bulk-actions-bar" style={{ display: "flex", gap: "10px", marginBottom: "15px", flexWrap: "wrap" }}>
         <button
           onClick={bulkCreateShiprocketOrders}
@@ -551,7 +555,6 @@ export default function AdminOrdersPage() {
           {bulkActionLoading ? "Processing..." : `🚚 Create SR (${selectedOrderIds.size})`}
         </button>
 
-        {/* 🆕 Sync Selected Shiprocket Orders */}
         <button
           onClick={syncSelectedShiprocketOrders}
           disabled={selectedOrderIds.size === 0 || syncLoading}
@@ -561,7 +564,6 @@ export default function AdminOrdersPage() {
           {syncLoading ? "Syncing..." : `🔄 Sync Selected SR (${selectedOrderIds.size})`}
         </button>
 
-        {/* Global Shiprocket Sync */}
         <button
           onClick={syncAllShiprocketOrders}
           className="btn-bulk"
@@ -581,7 +583,7 @@ export default function AdminOrdersPage() {
         </button>
       </div>
 
-      {/* Pagination Summary & Controls Header */}
+      {/* Pagination Header */}
       <div
         style={{
           display: "flex",
@@ -619,6 +621,7 @@ export default function AdminOrdersPage() {
               </th>
               <th>Sl No.</th>
               <th>Order ID</th>
+              <th>Products</th>
               <th>Customer</th>
               <th>Total</th>
               <th>Status</th>
@@ -629,7 +632,7 @@ export default function AdminOrdersPage() {
           <tbody>
             {orders.length === 0 ? (
               <tr>
-                <td colSpan="8" style={{ textAlign: "center" }}>
+                <td colSpan="9" style={{ textAlign: "center" }}>
                   No Orders Found
                 </td>
               </tr>
@@ -648,6 +651,12 @@ export default function AdminOrdersPage() {
                 else if (["Cancelled", "Failed Delivery", "Returned"].includes(order.orderStatus)) rowClass = "failed-or-cancelled-row";
                 else if (hasShiprocketStatus) rowClass = "in-transit-row";
 
+                const firstItem = order.orderItems?.[0];
+                const productName = firstItem?.name || "Order Item";
+                const initialLetter = productName.charAt(0).toUpperCase();
+                const avatarColor = getAvatarColor(productName);
+                const extraItemsCount = (order.orderItems?.length || 0) - 1;
+
                 return (
                   <tr key={order._id} className={`${selectedOrderIds.has(order._id) ? "selected-row" : ""} ${rowClass}`}>
                     <td>
@@ -664,6 +673,37 @@ export default function AdminOrdersPage() {
                         {order.shiprocketOrderId && <span className="sr-dot" title="Shiprocket Order Created"></span>}
                       </div>
                     </td>
+
+                    {/* Letter Avatar Block Column */}
+                    <td>
+                      <div className="order-product-preview">
+                        <div className="product-thumb-container">
+                          <div
+                            className="product-letter-avatar"
+                            style={{ backgroundColor: avatarColor }}
+                          >
+                            {initialLetter}
+                          </div>
+                          {extraItemsCount > 0 && (
+                            <span className="extra-count-badge" title={`${extraItemsCount} more item(s)`}>
+                              +{extraItemsCount}
+                            </span>
+                          )}
+                        </div>
+                        <div className="product-details-summary">
+                          <span className="product-title-text" title={productName}>
+                            {productName}
+                          </span>
+                          <span className="product-sub-qty">
+                            Qty: {firstItem?.quantity || 1}
+                            {extraItemsCount > 0 && (
+                              <span className="more-products-text"> ({extraItemsCount}+ more)</span>
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+
                     <td>
                       <div>
                         <strong>{order.user?.name || order.shippingInfo?.name || "Guest"}</strong>
@@ -736,7 +776,7 @@ export default function AdminOrdersPage() {
         </div>
       </div>
 
-       {/* 🆕 Order Details Modal (View/Actions) */}
+      {/* Order Details Modal */}
       {detailedOrder && !showEditModal && (
         <div className="modal">
           <div className="modal-content-large">
@@ -776,33 +816,30 @@ export default function AdminOrdersPage() {
               </div>
             </div>
           
-          {detailedOrder.shiprocketOrderId && (
-    <button 
-        className="btn btn-warning" 
-        onClick={() => resetShiprocketData(detailedOrder._id)}
-        style={{backgroundColor: '#ff9800'}}
-    >
-        🗑️ Reset SR Data
-    </button>
-)}
+            {detailedOrder.shiprocketOrderId && (
+              <button 
+                  className="btn btn-warning" 
+                  onClick={() => resetShiprocketData(detailedOrder._id)}
+                  style={{backgroundColor: '#ff9800'}}
+              >
+                  🗑️ Reset SR Data
+              </button>
+            )}
 
-{!detailedOrder.shiprocketOrderId ? (
-    // Step 1: Create Shiprocket Order
-    <button className="btn btn-shiprocket-create" onClick={() => createShiprocketOrder(detailedOrder._id)}>
-        🚚 Create Shiprocket Order
-    </button>
-) : (
-    // Step 2: Sync Shiprocket Status
-    <button 
-        className="btn btn-shiprocket-sync" 
-        onClick={() => syncShiprocketStatus(detailedOrder._id)}
-        disabled={syncLoading}
-    >
-        🔄 {syncLoading ? 'Syncing...' : 'Sync Shiprocket Status'}
-    </button>
-)}
+            {!detailedOrder.shiprocketOrderId ? (
+              <button className="btn btn-shiprocket-create" onClick={() => createShiprocketOrder(detailedOrder._id)}>
+                  🚚 Create Shiprocket Order
+              </button>
+            ) : (
+              <button 
+                  className="btn btn-shiprocket-sync" 
+                  onClick={() => syncShiprocketStatus(detailedOrder._id)}
+                  disabled={syncLoading}
+              >
+                  🔄 {syncLoading ? 'Syncing...' : 'Sync Shiprocket Status'}
+              </button>
+            )}
 
-            {/* 🆕 SHIPROCKET INTEGRATION DETAILS */}
             <h4>🚚 Shipping & Tracking Status (Shiprocket)</h4>
             <div className="shiprocket-info-box">
               <p>
@@ -828,7 +865,6 @@ export default function AdminOrdersPage() {
               )}
             </div>
             
-            {/* Display full tracking history if available */}
             {detailedOrder.fullTrackingHistory && detailedOrder.fullTrackingHistory.track_status === 1 && (
                 <>
                 <h4 style={{marginTop: '15px'}}>📍 Tracking History</h4>
@@ -838,11 +874,10 @@ export default function AdminOrdersPage() {
                             <small><b>{event.location}</b> on {event.date}</small>
                             <p style={{margin: '0', fontSize: '14px'}}>{event.status_description}</p>
                         </li>
-                    )).reverse() /* Show newest event first */}
+                    )).reverse()}
                 </ul>
                 </>
             )}
-
 
             <h4>📍 Shipping Info</h4>
             <p>
@@ -874,17 +909,14 @@ export default function AdminOrdersPage() {
             </ul>
 
             <h4>💰 Payment Summary</h4>
-            
-            {/* 🆕 Add this block */}
-{detailedOrder.paymentInfo?.id && (
-  <p>
-    <b>Razorpay Payment ID:</b> <code style={{background: "#eee", padding: "2px 4px"}}>{detailedOrder.paymentInfo.id}</code>
-  </p>
-)}
-{detailedOrder.paymentInfo?.method && (
-  <p><b>Method:</b> {detailedOrder.paymentInfo.method}</p>
-)}
-
+            {detailedOrder.paymentInfo?.id && (
+              <p>
+                <b>Razorpay Payment ID:</b> <code style={{background: "#eee", padding: "2px 4px"}}>{detailedOrder.paymentInfo.id}</code>
+              </p>
+            )}
+            {detailedOrder.paymentInfo?.method && (
+              <p><b>Method:</b> {detailedOrder.paymentInfo.method}</p>
+            )}
 
             <p>Items: ₹{(Number(detailedOrder.itemsPrice) || 0).toFixed(2)}</p>
             <p>Shipping: ₹{(Number(detailedOrder.shippingPrice) || 0).toFixed(2)}</p>
@@ -896,11 +928,9 @@ export default function AdminOrdersPage() {
               <b>Paid: ₹{(Number(detailedOrder.amountPaid) || 0).toFixed(2)}</b>
             </p>
             <p>Due: ₹{(Number(detailedOrder.amountDue) || 0).toFixed(2)}</p>
-             {/* 🆕 Payment Tag Display in Detail View */}
             <p style={{marginTop: '10px'}}>
                 Payment Status: {getPaymentTag(detailedOrder)}
             </p>
-
 
             <div className="actions-row">
               <button className="btn" onClick={() => downloadInvoice(detailedOrder)}>
@@ -916,12 +946,10 @@ export default function AdminOrdersPage() {
                 WhatsApp Cancel
               </button>
               {!detailedOrder.shiprocketOrderId ? (
-                // Step 1: Create Shiprocket Order
                 <button className="btn btn-shiprocket-create" onClick={() => createShiprocketOrder(detailedOrder._id)}>
                   🚚 Create Shiprocket Order
                 </button>
               ) : (
-                // Step 2: Sync Shiprocket Status
                 <button 
                     className="btn btn-shiprocket-sync" 
                     onClick={() => syncShiprocketStatus(detailedOrder._id)}
@@ -939,65 +967,58 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
+      {/* Order Editing Modal */}
+      {showEditModal && detailedOrder && (
+        <div className="modal">
+            <div className="modal-content-small">
+                <h3>✏️ Edit Shipping Details: {detailedOrder._id}</h3>
+                <form onSubmit={editOrderAdmin}>
+                    <h4>Shipping Info</h4>
+                    <label>
+                        Name:
+                        <input type="text" name="shippingInfo.name" value={editFormData.shippingInfo?.name || ''} onChange={handleEditChange} required />
+                    </label>
+                    <label>
+                        Phone:
+                        <input type="text" name="shippingInfo.phone" value={editFormData.shippingInfo?.phone || ''} onChange={handleEditChange} required />
+                    </label>
+                    <label>
+                        Email:
+                        <input type="email" name="shippingInfo.email" value={editFormData.shippingInfo?.email || ''} onChange={handleEditChange} />
+                    </label>
+                    <label>
+                        Address:
+                        <input type="text" name="shippingInfo.address" value={editFormData.shippingInfo?.address || ''} onChange={handleEditChange} required />
+                    </label>
+                    <label>
+                        City:
+                        <input type="text" name="shippingInfo.city" value={editFormData.shippingInfo?.city || ''} onChange={handleEditChange} required />
+                    </label>
+                    <label>
+                        State:
+                        <input type="text" name="shippingInfo.state" value={editFormData.shippingInfo?.state || ''} onChange={handleEditChange} required />
+                    </label>
+                    <label>
+                        Pincode:
+                        <input type="text" name="shippingInfo.postalCode" value={editFormData.shippingInfo?.postalCode || ''} onChange={handleEditChange} required />
+                    </label>
+                    <label>
+                        Country:
+                        <input type="text" name="shippingInfo.country" value={editFormData.shippingInfo?.country || ''} onChange={handleEditChange} required />
+                    </label>
 
-{/* 🆕 Order Editing Modal (UPDATED) */}
-{showEditModal && detailedOrder && (
-    <div className="modal">
-        <div className="modal-content-small">
-            <h3>✏️ Edit Shipping Details: {detailedOrder._id}</h3>
-            <form onSubmit={editOrderAdmin}>
-                
-                {/* ⚠️ WARNING: All pricing fields (Items Price, Shipping Price, Discount, Total Price) 
-                  HAVE BEEN REMOVED to align with the backend's current restriction 
-                  (exports.editOrderAdmin only updates shippingInfo). 
-                */}
-                
-                <h4>Shipping Info</h4>
-                <label>
-                    Name:
-                    <input type="text" name="shippingInfo.name" value={editFormData.shippingInfo?.name || ''} onChange={handleEditChange} required />
-                </label>
-                <label>
-                    Phone:
-                    <input type="text" name="shippingInfo.phone" value={editFormData.shippingInfo?.phone || ''} onChange={handleEditChange} required />
-                </label>
-                <label>
-                    Email: {/* 🔑 Added the Email field, crucial for Shiprocket re-creation and contact */}
-                    <input type="email" name="shippingInfo.email" value={editFormData.shippingInfo?.email || ''} onChange={handleEditChange} />
-                </label>
-                <label>
-                    Address:
-                    <input type="text" name="shippingInfo.address" value={editFormData.shippingInfo?.address || ''} onChange={handleEditChange} required />
-                </label>
-                <label>
-                    City: {/* Added City */}
-                    <input type="text" name="shippingInfo.city" value={editFormData.shippingInfo?.city || ''} onChange={handleEditChange} required />
-                </label>
-                <label>
-                    State: {/* Added State */}
-                    <input type="text" name="shippingInfo.state" value={editFormData.shippingInfo?.state || ''} onChange={handleEditChange} required />
-                </label>
-                <label>
-                    Pincode:
-                    <input type="text" name="shippingInfo.postalCode" value={editFormData.shippingInfo?.postalCode || ''} onChange={handleEditChange} required />
-                </label>
-                <label>
-                    Country: {/* Added Country */}
-                    <input type="text" name="shippingInfo.country" value={editFormData.shippingInfo?.country || ''} onChange={handleEditChange} required />
-                </label>
-
-                <div className="actions-row" style={{marginTop: '20px'}}>
-                    <button type="submit" className="btn" disabled={loading}>
-                        {loading ? 'Saving...' : 'Save Shipping Changes'}
-                    </button>
-                    <button type="button" className="btn-close" onClick={closeDetails}>
-                        Cancel
-                    </button>
-                </div>
-            </form>
+                    <div className="actions-row" style={{marginTop: '20px'}}>
+                        <button type="submit" className="btn" disabled={loading}>
+                            {loading ? 'Saving...' : 'Save Shipping Changes'}
+                        </button>
+                        <button type="button" className="btn-close" onClick={closeDetails}>
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
-    </div>
-)}
+      )}
     </div>
   );
 }
